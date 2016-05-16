@@ -53,9 +53,14 @@ func NewFakeDockerManager(
 		burst, containerLogsDir, osInterface, networkPlugin, runtimeHelper, httpClient, &NativeExecHandler{},
 		fakeOOMAdjuster, fakeProcFs, false, imageBackOff, false, false, true)
 	dm.dockerPuller = &FakeDockerPuller{}
-	dm.versionCache = cache.NewVersionCache(func() (kubecontainer.Version, kubecontainer.Version, error) {
-		return dm.getVersionInfo()
-	})
+
+	// ttl of version cache is set to 0 so we always call version api directly in tests.
+	dm.versionCache = cache.NewObjectCache(
+		func() (interface{}, error) {
+			return dm.getVersionInfo()
+		},
+		0,
+	)
 	return dm
 }
 

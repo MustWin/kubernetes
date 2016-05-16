@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"reflect"
 	"testing"
@@ -49,6 +50,21 @@ func initTestErrorHandler(t *testing.T) {
 	})
 }
 
+func defaultHeader() http.Header {
+	header := http.Header{}
+	header.Set("Content-Type", runtime.ContentTypeJSON)
+	return header
+}
+
+func defaultClientConfig() *restclient.Config {
+	return &restclient.Config{
+		ContentConfig: restclient.ContentConfig{
+			ContentType:  runtime.ContentTypeJSON,
+			GroupVersion: testapi.Default.GroupVersion(),
+		},
+	}
+}
+
 type internalType struct {
 	Kind       string
 	APIVersion string
@@ -71,24 +87,24 @@ type ExternalType2 struct {
 }
 
 func (obj *internalType) GetObjectKind() unversioned.ObjectKind { return obj }
-func (obj *internalType) SetGroupVersionKind(gvk *unversioned.GroupVersionKind) {
+func (obj *internalType) SetGroupVersionKind(gvk unversioned.GroupVersionKind) {
 	obj.APIVersion, obj.Kind = gvk.ToAPIVersionAndKind()
 }
-func (obj *internalType) GroupVersionKind() *unversioned.GroupVersionKind {
+func (obj *internalType) GroupVersionKind() unversioned.GroupVersionKind {
 	return unversioned.FromAPIVersionAndKind(obj.APIVersion, obj.Kind)
 }
 func (obj *externalType) GetObjectKind() unversioned.ObjectKind { return obj }
-func (obj *externalType) SetGroupVersionKind(gvk *unversioned.GroupVersionKind) {
+func (obj *externalType) SetGroupVersionKind(gvk unversioned.GroupVersionKind) {
 	obj.APIVersion, obj.Kind = gvk.ToAPIVersionAndKind()
 }
-func (obj *externalType) GroupVersionKind() *unversioned.GroupVersionKind {
+func (obj *externalType) GroupVersionKind() unversioned.GroupVersionKind {
 	return unversioned.FromAPIVersionAndKind(obj.APIVersion, obj.Kind)
 }
 func (obj *ExternalType2) GetObjectKind() unversioned.ObjectKind { return obj }
-func (obj *ExternalType2) SetGroupVersionKind(gvk *unversioned.GroupVersionKind) {
+func (obj *ExternalType2) SetGroupVersionKind(gvk unversioned.GroupVersionKind) {
 	obj.APIVersion, obj.Kind = gvk.ToAPIVersionAndKind()
 }
-func (obj *ExternalType2) GroupVersionKind() *unversioned.GroupVersionKind {
+func (obj *ExternalType2) GroupVersionKind() unversioned.GroupVersionKind {
 	return unversioned.FromAPIVersionAndKind(obj.APIVersion, obj.Kind)
 }
 
@@ -151,12 +167,14 @@ func (t *testPrinter) HandledResources() []string {
 
 type testDescriber struct {
 	Name, Namespace string
+	Settings        kubectl.DescriberSettings
 	Output          string
 	Err             error
 }
 
-func (t *testDescriber) Describe(namespace, name string) (output string, err error) {
+func (t *testDescriber) Describe(namespace, name string, describerSettings kubectl.DescriberSettings) (output string, err error) {
 	t.Namespace, t.Name = namespace, name
+	t.Settings = describerSettings
 	return t.Output, t.Err
 }
 
@@ -311,9 +329,9 @@ func NewAPIFactory() (*cmdutil.Factory, *testFactory, runtime.Codec) {
 		},
 	}
 	rf := cmdutil.NewFactory(nil)
-	f.PodSelectorForObject = rf.PodSelectorForObject
 	f.MapBasedSelectorForObject = rf.MapBasedSelectorForObject
 	f.PortsForObject = rf.PortsForObject
+	f.ProtocolsForObject = rf.ProtocolsForObject
 	f.LabelsForObject = rf.LabelsForObject
 	f.CanBeExposed = rf.CanBeExposed
 	return f, t, testapi.Default.Codec()
@@ -515,6 +533,7 @@ func Example_printPodWithWideFormat() {
 				{Ready: true, RestartCount: 3, State: api.ContainerState{Running: &api.ContainerStateRunning{}}},
 				{RestartCount: 3},
 			},
+			PodIP: "10.1.1.3",
 		},
 	}
 	mapper, _ := f.Object(false)
@@ -523,8 +542,8 @@ func Example_printPodWithWideFormat() {
 		fmt.Printf("Unexpected error: %v", err)
 	}
 	// Output:
-	// NAME      READY     STATUS     RESTARTS   AGE       NODE
-	// test1     1/2       podPhase   6          10y       kubernetes-minion-abcd
+	// NAME      READY     STATUS     RESTARTS   AGE       IP         NODE
+	// test1     1/2       podPhase   6          10y       10.1.1.3   kubernetes-minion-abcd
 }
 
 func Example_printPodWithShowLabels() {
@@ -766,8 +785,8 @@ func Example_printServiceWithNamespacesAndLabels() {
 	}
 	// Output:
 	// |NAMESPACE   NAME      CLUSTER-IP   EXTERNAL-IP   PORT(S)           AGE       L1|
-	// |ns1         svc1      10.1.1.1     unknown       53/UDP,53/TCP     10y       value|
-	// |ns2         svc2      10.1.1.2     unknown       80/TCP,8080/TCP   10y       dolla-bill-yall|
+	// |ns1         svc1      10.1.1.1     <unknown>     53/UDP,53/TCP     10y       value|
+	// |ns2         svc2      10.1.1.2     <unknown>     80/TCP,8080/TCP   10y       dolla-bill-yall|
 	// ||
 }
 

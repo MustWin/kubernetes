@@ -30,21 +30,23 @@ import (
 	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/request/x509"
 	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/token/oidc"
 	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/token/tokenfile"
+	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/token/webhook"
 )
 
 type AuthenticatorConfig struct {
-	BasicAuthFile             string
-	ClientCAFile              string
-	TokenAuthFile             string
-	OIDCIssuerURL             string
-	OIDCClientID              string
-	OIDCCAFile                string
-	OIDCUsernameClaim         string
-	OIDCGroupsClaim           string
-	ServiceAccountKeyFile     string
-	ServiceAccountLookup      bool
-	ServiceAccountTokenGetter serviceaccount.ServiceAccountTokenGetter
-	KeystoneURL               string
+	BasicAuthFile               string
+	ClientCAFile                string
+	TokenAuthFile               string
+	OIDCIssuerURL               string
+	OIDCClientID                string
+	OIDCCAFile                  string
+	OIDCUsernameClaim           string
+	OIDCGroupsClaim             string
+	ServiceAccountKeyFile       string
+	ServiceAccountLookup        bool
+	ServiceAccountTokenGetter   serviceaccount.ServiceAccountTokenGetter
+	KeystoneURL                 string
+	WebhookTokenAuthnConfigFile string
 }
 
 // New returns an authenticator.Request or an error that supports the standard
@@ -98,6 +100,14 @@ func New(config AuthenticatorConfig) (authenticator.Request, error) {
 			return nil, err
 		}
 		authenticators = append(authenticators, keystoneAuth)
+	}
+
+	if len(config.WebhookTokenAuthnConfigFile) > 0 {
+		webhookTokenAuth, err := newWebhookTokenAuthenticator(config.WebhookTokenAuthnConfigFile)
+		if err != nil {
+			return nil, err
+		}
+		authenticators = append(authenticators, webhookTokenAuth)
 	}
 
 	switch len(authenticators) {
@@ -179,11 +189,20 @@ func newAuthenticatorFromClientCAFile(clientCAFile string) (authenticator.Reques
 }
 
 // newAuthenticatorFromTokenFile returns an authenticator.Request or an error
-func newAuthenticatorFromKeystoneURL(keystoneConfigFile string) (authenticator.Request, error) {
-	keystoneAuthenticator, err := keystone.NewKeystoneAuthenticator(keystoneConfigFile)
+func newAuthenticatorFromKeystoneURL(keystoneURL string) (authenticator.Request, error) {
+	keystoneAuthenticator, err := keystone.NewKeystoneAuthenticator(keystoneURL)
 	if err != nil {
 		return nil, err
 	}
 
 	return basicauth.New(keystoneAuthenticator), nil
+}
+
+func newWebhookTokenAuthenticator(webhookConfigFile string) (authenticator.Request, error) {
+	webhookTokenAuthenticator, err := webhook.New(webhookConfigFile)
+	if err != nil {
+		return nil, err
+	}
+
+	return bearertoken.New(webhookTokenAuthenticator), nil
 }

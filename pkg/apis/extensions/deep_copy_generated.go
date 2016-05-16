@@ -31,7 +31,6 @@ import (
 func init() {
 	if err := api.Scheme.AddGeneratedDeepCopyFuncs(
 		DeepCopy_extensions_APIVersion,
-		DeepCopy_extensions_CPUTargetUtilization,
 		DeepCopy_extensions_CustomMetricCurrentStatus,
 		DeepCopy_extensions_CustomMetricCurrentStatusList,
 		DeepCopy_extensions_CustomMetricTarget,
@@ -46,12 +45,9 @@ func init() {
 		DeepCopy_extensions_DeploymentSpec,
 		DeepCopy_extensions_DeploymentStatus,
 		DeepCopy_extensions_DeploymentStrategy,
+		DeepCopy_extensions_FSGroupStrategyOptions,
 		DeepCopy_extensions_HTTPIngressPath,
 		DeepCopy_extensions_HTTPIngressRuleValue,
-		DeepCopy_extensions_HorizontalPodAutoscaler,
-		DeepCopy_extensions_HorizontalPodAutoscalerList,
-		DeepCopy_extensions_HorizontalPodAutoscalerSpec,
-		DeepCopy_extensions_HorizontalPodAutoscalerStatus,
 		DeepCopy_extensions_HostPortRange,
 		DeepCopy_extensions_IDRange,
 		DeepCopy_extensions_Ingress,
@@ -62,11 +58,6 @@ func init() {
 		DeepCopy_extensions_IngressSpec,
 		DeepCopy_extensions_IngressStatus,
 		DeepCopy_extensions_IngressTLS,
-		DeepCopy_extensions_Job,
-		DeepCopy_extensions_JobCondition,
-		DeepCopy_extensions_JobList,
-		DeepCopy_extensions_JobSpec,
-		DeepCopy_extensions_JobStatus,
 		DeepCopy_extensions_PodSecurityPolicy,
 		DeepCopy_extensions_PodSecurityPolicyList,
 		DeepCopy_extensions_PodSecurityPolicySpec,
@@ -82,7 +73,7 @@ func init() {
 		DeepCopy_extensions_Scale,
 		DeepCopy_extensions_ScaleSpec,
 		DeepCopy_extensions_ScaleStatus,
-		DeepCopy_extensions_SubresourceReference,
+		DeepCopy_extensions_SupplementalGroupsStrategyOptions,
 		DeepCopy_extensions_ThirdPartyResource,
 		DeepCopy_extensions_ThirdPartyResourceData,
 		DeepCopy_extensions_ThirdPartyResourceDataList,
@@ -95,11 +86,6 @@ func init() {
 
 func DeepCopy_extensions_APIVersion(in APIVersion, out *APIVersion, c *conversion.Cloner) error {
 	out.Name = in.Name
-	return nil
-}
-
-func DeepCopy_extensions_CPUTargetUtilization(in CPUTargetUtilization, out *CPUTargetUtilization, c *conversion.Cloner) error {
-	out.TargetPercentage = in.TargetPercentage
 	return nil
 }
 
@@ -286,7 +272,7 @@ func DeepCopy_extensions_DeploymentSpec(in DeploymentSpec, out *DeploymentSpec, 
 	out.MinReadySeconds = in.MinReadySeconds
 	if in.RevisionHistoryLimit != nil {
 		in, out := in.RevisionHistoryLimit, &out.RevisionHistoryLimit
-		*out = new(int)
+		*out = new(int32)
 		**out = *in
 	} else {
 		out.RevisionHistoryLimit = nil
@@ -327,6 +313,22 @@ func DeepCopy_extensions_DeploymentStrategy(in DeploymentStrategy, out *Deployme
 	return nil
 }
 
+func DeepCopy_extensions_FSGroupStrategyOptions(in FSGroupStrategyOptions, out *FSGroupStrategyOptions, c *conversion.Cloner) error {
+	out.Rule = in.Rule
+	if in.Ranges != nil {
+		in, out := in.Ranges, &out.Ranges
+		*out = make([]IDRange, len(in))
+		for i := range in {
+			if err := DeepCopy_extensions_IDRange(in[i], &(*out)[i], c); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Ranges = nil
+	}
+	return nil
+}
+
 func DeepCopy_extensions_HTTPIngressPath(in HTTPIngressPath, out *HTTPIngressPath, c *conversion.Cloner) error {
 	out.Path = in.Path
 	if err := DeepCopy_extensions_IngressBackend(in.Backend, &out.Backend, c); err != nil {
@@ -346,96 +348,6 @@ func DeepCopy_extensions_HTTPIngressRuleValue(in HTTPIngressRuleValue, out *HTTP
 		}
 	} else {
 		out.Paths = nil
-	}
-	return nil
-}
-
-func DeepCopy_extensions_HorizontalPodAutoscaler(in HorizontalPodAutoscaler, out *HorizontalPodAutoscaler, c *conversion.Cloner) error {
-	if err := unversioned.DeepCopy_unversioned_TypeMeta(in.TypeMeta, &out.TypeMeta, c); err != nil {
-		return err
-	}
-	if err := api.DeepCopy_api_ObjectMeta(in.ObjectMeta, &out.ObjectMeta, c); err != nil {
-		return err
-	}
-	if err := DeepCopy_extensions_HorizontalPodAutoscalerSpec(in.Spec, &out.Spec, c); err != nil {
-		return err
-	}
-	if err := DeepCopy_extensions_HorizontalPodAutoscalerStatus(in.Status, &out.Status, c); err != nil {
-		return err
-	}
-	return nil
-}
-
-func DeepCopy_extensions_HorizontalPodAutoscalerList(in HorizontalPodAutoscalerList, out *HorizontalPodAutoscalerList, c *conversion.Cloner) error {
-	if err := unversioned.DeepCopy_unversioned_TypeMeta(in.TypeMeta, &out.TypeMeta, c); err != nil {
-		return err
-	}
-	if err := unversioned.DeepCopy_unversioned_ListMeta(in.ListMeta, &out.ListMeta, c); err != nil {
-		return err
-	}
-	if in.Items != nil {
-		in, out := in.Items, &out.Items
-		*out = make([]HorizontalPodAutoscaler, len(in))
-		for i := range in {
-			if err := DeepCopy_extensions_HorizontalPodAutoscaler(in[i], &(*out)[i], c); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.Items = nil
-	}
-	return nil
-}
-
-func DeepCopy_extensions_HorizontalPodAutoscalerSpec(in HorizontalPodAutoscalerSpec, out *HorizontalPodAutoscalerSpec, c *conversion.Cloner) error {
-	if err := DeepCopy_extensions_SubresourceReference(in.ScaleRef, &out.ScaleRef, c); err != nil {
-		return err
-	}
-	if in.MinReplicas != nil {
-		in, out := in.MinReplicas, &out.MinReplicas
-		*out = new(int)
-		**out = *in
-	} else {
-		out.MinReplicas = nil
-	}
-	out.MaxReplicas = in.MaxReplicas
-	if in.CPUUtilization != nil {
-		in, out := in.CPUUtilization, &out.CPUUtilization
-		*out = new(CPUTargetUtilization)
-		if err := DeepCopy_extensions_CPUTargetUtilization(*in, *out, c); err != nil {
-			return err
-		}
-	} else {
-		out.CPUUtilization = nil
-	}
-	return nil
-}
-
-func DeepCopy_extensions_HorizontalPodAutoscalerStatus(in HorizontalPodAutoscalerStatus, out *HorizontalPodAutoscalerStatus, c *conversion.Cloner) error {
-	if in.ObservedGeneration != nil {
-		in, out := in.ObservedGeneration, &out.ObservedGeneration
-		*out = new(int64)
-		**out = *in
-	} else {
-		out.ObservedGeneration = nil
-	}
-	if in.LastScaleTime != nil {
-		in, out := in.LastScaleTime, &out.LastScaleTime
-		*out = new(unversioned.Time)
-		if err := unversioned.DeepCopy_unversioned_Time(*in, *out, c); err != nil {
-			return err
-		}
-	} else {
-		out.LastScaleTime = nil
-	}
-	out.CurrentReplicas = in.CurrentReplicas
-	out.DesiredReplicas = in.DesiredReplicas
-	if in.CurrentCPUUtilizationPercentage != nil {
-		in, out := in.CurrentCPUUtilizationPercentage, &out.CurrentCPUUtilizationPercentage
-		*out = new(int)
-		**out = *in
-	} else {
-		out.CurrentCPUUtilizationPercentage = nil
 	}
 	return nil
 }
@@ -572,137 +484,6 @@ func DeepCopy_extensions_IngressTLS(in IngressTLS, out *IngressTLS, c *conversio
 	return nil
 }
 
-func DeepCopy_extensions_Job(in Job, out *Job, c *conversion.Cloner) error {
-	if err := unversioned.DeepCopy_unversioned_TypeMeta(in.TypeMeta, &out.TypeMeta, c); err != nil {
-		return err
-	}
-	if err := api.DeepCopy_api_ObjectMeta(in.ObjectMeta, &out.ObjectMeta, c); err != nil {
-		return err
-	}
-	if err := DeepCopy_extensions_JobSpec(in.Spec, &out.Spec, c); err != nil {
-		return err
-	}
-	if err := DeepCopy_extensions_JobStatus(in.Status, &out.Status, c); err != nil {
-		return err
-	}
-	return nil
-}
-
-func DeepCopy_extensions_JobCondition(in JobCondition, out *JobCondition, c *conversion.Cloner) error {
-	out.Type = in.Type
-	out.Status = in.Status
-	if err := unversioned.DeepCopy_unversioned_Time(in.LastProbeTime, &out.LastProbeTime, c); err != nil {
-		return err
-	}
-	if err := unversioned.DeepCopy_unversioned_Time(in.LastTransitionTime, &out.LastTransitionTime, c); err != nil {
-		return err
-	}
-	out.Reason = in.Reason
-	out.Message = in.Message
-	return nil
-}
-
-func DeepCopy_extensions_JobList(in JobList, out *JobList, c *conversion.Cloner) error {
-	if err := unversioned.DeepCopy_unversioned_TypeMeta(in.TypeMeta, &out.TypeMeta, c); err != nil {
-		return err
-	}
-	if err := unversioned.DeepCopy_unversioned_ListMeta(in.ListMeta, &out.ListMeta, c); err != nil {
-		return err
-	}
-	if in.Items != nil {
-		in, out := in.Items, &out.Items
-		*out = make([]Job, len(in))
-		for i := range in {
-			if err := DeepCopy_extensions_Job(in[i], &(*out)[i], c); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.Items = nil
-	}
-	return nil
-}
-
-func DeepCopy_extensions_JobSpec(in JobSpec, out *JobSpec, c *conversion.Cloner) error {
-	if in.Parallelism != nil {
-		in, out := in.Parallelism, &out.Parallelism
-		*out = new(int)
-		**out = *in
-	} else {
-		out.Parallelism = nil
-	}
-	if in.Completions != nil {
-		in, out := in.Completions, &out.Completions
-		*out = new(int)
-		**out = *in
-	} else {
-		out.Completions = nil
-	}
-	if in.ActiveDeadlineSeconds != nil {
-		in, out := in.ActiveDeadlineSeconds, &out.ActiveDeadlineSeconds
-		*out = new(int64)
-		**out = *in
-	} else {
-		out.ActiveDeadlineSeconds = nil
-	}
-	if in.Selector != nil {
-		in, out := in.Selector, &out.Selector
-		*out = new(unversioned.LabelSelector)
-		if err := unversioned.DeepCopy_unversioned_LabelSelector(*in, *out, c); err != nil {
-			return err
-		}
-	} else {
-		out.Selector = nil
-	}
-	if in.ManualSelector != nil {
-		in, out := in.ManualSelector, &out.ManualSelector
-		*out = new(bool)
-		**out = *in
-	} else {
-		out.ManualSelector = nil
-	}
-	if err := api.DeepCopy_api_PodTemplateSpec(in.Template, &out.Template, c); err != nil {
-		return err
-	}
-	return nil
-}
-
-func DeepCopy_extensions_JobStatus(in JobStatus, out *JobStatus, c *conversion.Cloner) error {
-	if in.Conditions != nil {
-		in, out := in.Conditions, &out.Conditions
-		*out = make([]JobCondition, len(in))
-		for i := range in {
-			if err := DeepCopy_extensions_JobCondition(in[i], &(*out)[i], c); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.Conditions = nil
-	}
-	if in.StartTime != nil {
-		in, out := in.StartTime, &out.StartTime
-		*out = new(unversioned.Time)
-		if err := unversioned.DeepCopy_unversioned_Time(*in, *out, c); err != nil {
-			return err
-		}
-	} else {
-		out.StartTime = nil
-	}
-	if in.CompletionTime != nil {
-		in, out := in.CompletionTime, &out.CompletionTime
-		*out = new(unversioned.Time)
-		if err := unversioned.DeepCopy_unversioned_Time(*in, *out, c); err != nil {
-			return err
-		}
-	} else {
-		out.CompletionTime = nil
-	}
-	out.Active = in.Active
-	out.Succeeded = in.Succeeded
-	out.Failed = in.Failed
-	return nil
-}
-
 func DeepCopy_extensions_PodSecurityPolicy(in PodSecurityPolicy, out *PodSecurityPolicy, c *conversion.Cloner) error {
 	if err := unversioned.DeepCopy_unversioned_TypeMeta(in.TypeMeta, &out.TypeMeta, c); err != nil {
 		return err
@@ -739,14 +520,32 @@ func DeepCopy_extensions_PodSecurityPolicyList(in PodSecurityPolicyList, out *Po
 
 func DeepCopy_extensions_PodSecurityPolicySpec(in PodSecurityPolicySpec, out *PodSecurityPolicySpec, c *conversion.Cloner) error {
 	out.Privileged = in.Privileged
-	if in.Capabilities != nil {
-		in, out := in.Capabilities, &out.Capabilities
+	if in.DefaultAddCapabilities != nil {
+		in, out := in.DefaultAddCapabilities, &out.DefaultAddCapabilities
 		*out = make([]api.Capability, len(in))
 		for i := range in {
 			(*out)[i] = in[i]
 		}
 	} else {
-		out.Capabilities = nil
+		out.DefaultAddCapabilities = nil
+	}
+	if in.RequiredDropCapabilities != nil {
+		in, out := in.RequiredDropCapabilities, &out.RequiredDropCapabilities
+		*out = make([]api.Capability, len(in))
+		for i := range in {
+			(*out)[i] = in[i]
+		}
+	} else {
+		out.RequiredDropCapabilities = nil
+	}
+	if in.AllowedCapabilities != nil {
+		in, out := in.AllowedCapabilities, &out.AllowedCapabilities
+		*out = make([]api.Capability, len(in))
+		for i := range in {
+			(*out)[i] = in[i]
+		}
+	} else {
+		out.AllowedCapabilities = nil
 	}
 	if in.Volumes != nil {
 		in, out := in.Volumes, &out.Volumes
@@ -777,6 +576,13 @@ func DeepCopy_extensions_PodSecurityPolicySpec(in PodSecurityPolicySpec, out *Po
 	if err := DeepCopy_extensions_RunAsUserStrategyOptions(in.RunAsUser, &out.RunAsUser, c); err != nil {
 		return err
 	}
+	if err := DeepCopy_extensions_SupplementalGroupsStrategyOptions(in.SupplementalGroups, &out.SupplementalGroups, c); err != nil {
+		return err
+	}
+	if err := DeepCopy_extensions_FSGroupStrategyOptions(in.FSGroup, &out.FSGroup, c); err != nil {
+		return err
+	}
+	out.ReadOnlyRootFilesystem = in.ReadOnlyRootFilesystem
 	return nil
 }
 
@@ -928,11 +734,19 @@ func DeepCopy_extensions_ScaleStatus(in ScaleStatus, out *ScaleStatus, c *conver
 	return nil
 }
 
-func DeepCopy_extensions_SubresourceReference(in SubresourceReference, out *SubresourceReference, c *conversion.Cloner) error {
-	out.Kind = in.Kind
-	out.Name = in.Name
-	out.APIVersion = in.APIVersion
-	out.Subresource = in.Subresource
+func DeepCopy_extensions_SupplementalGroupsStrategyOptions(in SupplementalGroupsStrategyOptions, out *SupplementalGroupsStrategyOptions, c *conversion.Cloner) error {
+	out.Rule = in.Rule
+	if in.Ranges != nil {
+		in, out := in.Ranges, &out.Ranges
+		*out = make([]IDRange, len(in))
+		for i := range in {
+			if err := DeepCopy_extensions_IDRange(in[i], &(*out)[i], c); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Ranges = nil
+	}
 	return nil
 }
 

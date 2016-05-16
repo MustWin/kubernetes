@@ -23,14 +23,11 @@ DOCKER_OPTS=${DOCKER_OPTS:-""}
 DOCKER_NATIVE=${DOCKER_NATIVE:-""}
 DOCKER=(docker ${DOCKER_OPTS})
 DOCKER_HOST=${DOCKER_HOST:-""}
-readonly DOCKER_MACHINE_NAME=${DOCKER_MACHINE_NAME:-"kube-dev"}
-readonly DOCKER_MACHINE_DRIVER=${DOCKER_MACHINE_DRIVER:-"virtualbox"}
+DOCKER_MACHINE_NAME=${DOCKER_MACHINE_NAME:-"kube-dev"}
+readonly DOCKER_MACHINE_DRIVER=${DOCKER_MACHINE_DRIVER:-"virtualbox --virtualbox-memory 4096 --virtualbox-cpu-count -1"}
 
-KUBE_ROOT=$(dirname "${BASH_SOURCE}")/..
-cd "${KUBE_ROOT}"
-
-# This'll canonicalize the path
-KUBE_ROOT=$PWD
+# This will canonicalize the path
+KUBE_ROOT=$(cd $(dirname "${BASH_SOURCE}")/.. && pwd -P)
 
 source hack/lib/init.sh
 
@@ -48,7 +45,7 @@ readonly KUBE_GCS_DELETE_EXISTING="${KUBE_GCS_DELETE_EXISTING:-n}"
 
 # Constants
 readonly KUBE_BUILD_IMAGE_REPO=kube-build
-readonly KUBE_BUILD_IMAGE_CROSS_TAG="v1.6.0-2"
+readonly KUBE_BUILD_IMAGE_CROSS_TAG="v1.6.2-2"
 # KUBE_BUILD_DATA_CONTAINER_NAME=kube-build-data-<hash>"
 
 # Here we map the output directories across both the local and remote _output
@@ -77,13 +74,10 @@ readonly DOCKER_MOUNT_ARGS_BASE=(
   --volume /etc/localtime:/etc/localtime:ro
 )
 
-# We create a Docker data container to cache incremental build artifacts.  We
-# need to cache both the go tree in _output and the go tree under Godeps.
+# We create a Docker data container to cache incremental build artifacts.
 readonly REMOTE_OUTPUT_GOPATH="${REMOTE_OUTPUT_SUBPATH}/go"
-readonly REMOTE_GODEP_GOPATH="/go/src/${KUBE_GO_PACKAGE}/Godeps/_workspace/pkg"
 readonly DOCKER_DATA_MOUNT_ARGS=(
   --volume "${REMOTE_OUTPUT_GOPATH}"
-  --volume "${REMOTE_GODEP_GOPATH}"
 )
 
 # This is where the final release artifacts are created locally
@@ -103,28 +97,28 @@ kube::build::get_docker_wrapped_binaries() {
           kube-apiserver,busybox
           kube-controller-manager,busybox
           kube-scheduler,busybox
-          kube-proxy,gcr.io/google_containers/debian-iptables-amd64:v2
+          kube-proxy,gcr.io/google_containers/debian-iptables-amd64:v3
         );;
     "arm")
         local targets=(
           kube-apiserver,armel/busybox
           kube-controller-manager,armel/busybox
           kube-scheduler,armel/busybox
-          kube-proxy,gcr.io/google_containers/debian-iptables-arm:v2
+          kube-proxy,gcr.io/google_containers/debian-iptables-arm:v3
         );;
     "arm64")
         local targets=(
           kube-apiserver,aarch64/busybox
           kube-controller-manager,aarch64/busybox
           kube-scheduler,aarch64/busybox
-          kube-proxy,gcr.io/google_containers/debian-iptables-arm64:v2
+          kube-proxy,gcr.io/google_containers/debian-iptables-arm64:v3
         );;
     "ppc64le")
         local targets=(
           kube-apiserver,ppc64le/busybox
           kube-controller-manager,ppc64le/busybox
           kube-scheduler,ppc64le/busybox
-          kube-proxy,gcr.io/google_containers/debian-iptables-ppc64le:v2
+          kube-proxy,gcr.io/google_containers/debian-iptables-ppc64le:v3
         );;
   esac
 
@@ -154,7 +148,7 @@ function kube::build::verify_prereqs() {
   fi
   kube::build::ensure_docker_daemon_connectivity || return 1
 
-  KUBE_ROOT_HASH=$(kube::build::short_hash "$KUBE_ROOT")
+  KUBE_ROOT_HASH=$(kube::build::short_hash "${HOSTNAME:-}:${KUBE_ROOT}")
   KUBE_BUILD_IMAGE_TAG="build-${KUBE_ROOT_HASH}"
   KUBE_BUILD_IMAGE="${KUBE_BUILD_IMAGE_REPO}:${KUBE_BUILD_IMAGE_TAG}"
   KUBE_BUILD_CONTAINER_NAME="kube-build-${KUBE_ROOT_HASH}"
@@ -184,9 +178,9 @@ function kube::build::docker_available_on_osx() {
 
 function kube::build::prepare_docker_machine() {
   kube::log::status "docker-machine was found."
-  docker-machine inspect "${DOCKER_MACHINE_NAME}" >/dev/null || {
+  docker-machine inspect "${DOCKER_MACHINE_NAME}" &> /dev/null || {
     kube::log::status "Creating a machine to build Kubernetes"
-    docker-machine create --driver "${DOCKER_MACHINE_DRIVER}" \
+    docker-machine create --driver ${DOCKER_MACHINE_DRIVER} \
       --engine-env HTTP_PROXY="${KUBERNETES_HTTP_PROXY:-}" \
       --engine-env HTTPS_PROXY="${KUBERNETES_HTTPS_PROXY:-}" \
       --engine-env NO_PROXY="${KUBERNETES_NO_PROXY:-127.0.0.1}" \
@@ -197,7 +191,7 @@ function kube::build::prepare_docker_machine() {
       return 1
     }
   }
-  docker-machine start "${DOCKER_MACHINE_NAME}" > /dev/null
+  docker-machine start "${DOCKER_MACHINE_NAME}" &> /dev/null
   # it takes `docker-machine env` a few seconds to work if the machine was just started
   while ! docker-machine env ${DOCKER_MACHINE_NAME} &> /dev/null; do
     sleep 1
@@ -319,7 +313,7 @@ function kube::build::prepare_output() {
   # On RHEL/Fedora SELinux is enabled by default and currently breaks docker
   # volume mounts.  We can work around this by explicitly adding a security
   # context to the _output directory.
-  # Details: https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/7/html/Resource_Management_and_Linux_Containers_Guide/sec-Sharing_Data_Across_Containers.html#sec-Mounting_a_Host_Directory_to_a_Container
+  # Details: http://www.projectatomic.io/blog/2015/06/using-volumes-with-docker-can-cause-problems-with-selinux/
   if which selinuxenabled &>/dev/null && \
       selinuxenabled && \
       which chcon >/dev/null ; then
@@ -330,6 +324,12 @@ function kube::build::prepare_output() {
         echo "    Continuing, but this build may fail later if SELinux prevents access."
       fi
     fi
+    number=${#DOCKER_MOUNT_ARGS[@]}
+    for (( i=0; i<number; i++ )); do
+      if [[ "${DOCKER_MOUNT_ARGS[i]}" =~ "${KUBE_ROOT}" ]]; then
+        DOCKER_MOUNT_ARGS[i]="${DOCKER_MOUNT_ARGS[i]}:Z"
+      fi
+    done
   fi
 
 }
@@ -458,7 +458,7 @@ function kube::build::source_targets() {
     cmd
     docs
     examples
-    Godeps/_workspace/src
+    federation
     Godeps/Godeps.json
     hack
     LICENSE
@@ -468,6 +468,7 @@ function kube::build::source_targets() {
     README.md
     test
     third_party
+    vendor
     contrib/completions/bash/kubectl
     contrib/mesos
     .generated_docs
@@ -540,6 +541,16 @@ function kube::build::clean_images() {
 }
 
 function kube::build::ensure_data_container() {
+  # This is temporary, while last remnants of _workspace are obliterated.  If
+  # the data container exists it might be from before the change from
+  # Godeps/_workspace/ to vendor/, and thereby still have a Godeps/_workspace/
+  # directory in it, which trips up godep (yay godep!).  Once we are confident
+  # that this has run ~everywhere we care about, we can remove this.
+  # TODO(thockin): remove this after v1.3 is cut.
+  if "${DOCKER[@]}" inspect "${KUBE_BUILD_DATA_CONTAINER_NAME}" \
+      | grep -q "Godeps/_workspace/pkg"; then
+    docker rm -f "${KUBE_BUILD_DATA_CONTAINER_NAME}"
+  fi
   if ! "${DOCKER[@]}" inspect "${KUBE_BUILD_DATA_CONTAINER_NAME}" >/dev/null 2>&1; then
     kube::log::status "Creating data container"
     local -ra docker_cmd=(
@@ -557,7 +568,7 @@ function kube::build::ensure_data_container() {
 # already been built.  This will sync out all output data from the build.
 function kube::build::run_build_command() {
   kube::log::status "Running build command...."
-  [[ $# != 0 ]] || { echo "Invalid input." >&2; return 4; }
+  [[ $# != 0 ]] || { echo "Invalid input - please specify a command to run." >&2; return 4; }
 
   kube::build::ensure_data_container
   kube::build::prepare_output
@@ -884,35 +895,35 @@ function kube::release::package_salt_tarball() {
 }
 
 # This will pack kube-system manifests files for distros without using salt
-# such as Ubuntu Trusty. For Trusty, we directly copy manifests from cluster/addons
-# and cluster/saltbase/salt. The script of cluster initialization will remove
-# the salt configuration and evaluate the variables in the manifests.
+# such as GCI and Ubuntu Trusty. We directly copy manifests from
+# cluster/addons and cluster/saltbase/salt. The script of cluster initialization
+# will remove the salt configuration and evaluate the variables in the manifests.
 function kube::release::package_kube_manifests_tarball() {
   kube::log::status "Building tarball: manifests"
 
   local release_stage="${RELEASE_STAGE}/manifests/kubernetes"
   rm -rf "${release_stage}"
-  mkdir -p "${release_stage}/trusty"
+  local dst_dir="${release_stage}/gci-trusty"
+  mkdir -p "${dst_dir}"
 
   local salt_dir="${KUBE_ROOT}/cluster/saltbase/salt"
   cp "${salt_dir}/fluentd-es/fluentd-es.yaml" "${release_stage}/"
   cp "${salt_dir}/fluentd-gcp/fluentd-gcp.yaml" "${release_stage}/"
   cp "${salt_dir}/kube-registry-proxy/kube-registry-proxy.yaml" "${release_stage}/"
   cp "${salt_dir}/kube-proxy/kube-proxy.manifest" "${release_stage}/"
-  cp "${salt_dir}/etcd/etcd.manifest" "${release_stage}/trusty"
-  cp "${salt_dir}/kube-scheduler/kube-scheduler.manifest" "${release_stage}/trusty"
-  cp "${salt_dir}/kube-apiserver/kube-apiserver.manifest" "${release_stage}/trusty"
-  cp "${salt_dir}/kube-controller-manager/kube-controller-manager.manifest" "${release_stage}/trusty"
-  cp "${salt_dir}/kube-addons/namespace.yaml" "${release_stage}/trusty"
-  cp "${salt_dir}/kube-addons/kube-addons.sh" "${release_stage}/trusty"
-  cp "${salt_dir}/kube-addons/kube-addon-update.sh" "${release_stage}/trusty"
-  cp "${KUBE_ROOT}/cluster/gce/trusty/configure-helper.sh" "${release_stage}/trusty"
-  cp -r "${salt_dir}/kube-admission-controls/limit-range" "${release_stage}/trusty"
+  cp "${salt_dir}/etcd/etcd.manifest" "${dst_dir}"
+  cp "${salt_dir}/kube-scheduler/kube-scheduler.manifest" "${dst_dir}"
+  cp "${salt_dir}/kube-apiserver/kube-apiserver.manifest" "${dst_dir}"
+  cp "${salt_dir}/kube-apiserver/abac-authz-policy.jsonl" "${dst_dir}"
+  cp "${salt_dir}/kube-controller-manager/kube-controller-manager.manifest" "${dst_dir}"
+  cp "${salt_dir}/kube-addons/kube-addon-manager.yaml" "${dst_dir}"
+  cp "${KUBE_ROOT}/cluster/gce/trusty/configure-helper.sh" "${dst_dir}"
+  cp -r "${salt_dir}/kube-admission-controls/limit-range" "${dst_dir}"
   local objects
   objects=$(cd "${KUBE_ROOT}/cluster/addons" && find . \( -name \*.yaml -or -name \*.yaml.in -or -name \*.json \) | grep -v demo)
-  tar c -C "${KUBE_ROOT}/cluster/addons" ${objects} | tar x -C "${release_stage}/trusty"
+  tar c -C "${KUBE_ROOT}/cluster/addons" ${objects} | tar x -C "${dst_dir}"
 
-  # This is for coreos only. ContainerVM or Trusty does not use it.
+  # This is for coreos only. ContainerVM, GCI, or Trusty does not use it.
   cp -r "${KUBE_ROOT}/cluster/gce/coreos/kube-manifests"/* "${release_stage}/"
 
   kube::release::clean_cruft
@@ -1103,8 +1114,9 @@ function kube::release::gcs::copy_release_artifacts() {
   # Stage everything in release directory
   kube::release::gcs::stage_and_hash "${RELEASE_DIR}"/* . || return 1
 
-  # Having the configure-vm.sh script and and trusty code from the GCE cluster
+  # Having the configure-vm.sh script and trusty code from the GCE cluster
   # deploy hosted with the release is useful for GKE.
+  # TODO(andyzheng0831): Replace the trusty path with GCI after finshing the GCI code.
   kube::release::gcs::stage_and_hash "${RELEASE_STAGE}/full/kubernetes/cluster/gce/configure-vm.sh" extra/gce || return 1
   kube::release::gcs::stage_and_hash "${RELEASE_STAGE}/full/kubernetes/cluster/gce/trusty/node.yaml" extra/gce || return 1
   kube::release::gcs::stage_and_hash "${RELEASE_STAGE}/full/kubernetes/cluster/gce/trusty/master.yaml" extra/gce || return 1
@@ -1490,7 +1502,7 @@ function kube::release::docker::release() {
     # Activate credentials for the k8s.production.user@gmail.com
     gcloud config set account k8s.production.user@gmail.com
   fi
-      
+
   for arch in "${KUBE_SERVER_PLATFORMS[@]##*/}"; do
     for binary in "${binaries[@]}"; do
 
@@ -1515,9 +1527,9 @@ function kube::release::docker::release() {
   fi
 }
 
-function kube::release::has_gcloud_account() {
+function kube::release::gcloud_account_is_active() {
   local -r account="${1-}"
-  if [[ -n $(gcloud auth list --filter-account $account 2>/dev/null) ]]; then
+  if [[ -n $(gcloud auth list --filter-account $account 2>/dev/null | grep "active") ]]; then
     return 0
   else
     return 1

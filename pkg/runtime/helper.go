@@ -18,6 +18,7 @@ package runtime
 
 import (
 	"fmt"
+	"io"
 	"reflect"
 
 	"k8s.io/kubernetes/pkg/api/unversioned"
@@ -42,8 +43,29 @@ func (t objectTyperToTyper) ObjectKind(obj Object) (*unversioned.GroupVersionKin
 	return &gvk, unversionedType, nil
 }
 
+// ObjectTyperToTyper casts the old typer interface to the new typer interface
 func ObjectTyperToTyper(typer ObjectTyper) Typer {
 	return objectTyperToTyper{typer: typer}
+}
+
+// unsafeObjectConvertor implements ObjectConvertor using the unsafe conversion path.
+type unsafeObjectConvertor struct {
+	*Scheme
+}
+
+var _ ObjectConvertor = unsafeObjectConvertor{}
+
+// ConvertToVersion converts in to the provided outVersion without copying the input first, which
+// is only safe if the output object is not mutated or reused.
+func (c unsafeObjectConvertor) ConvertToVersion(in Object, outVersion unversioned.GroupVersion) (Object, error) {
+	return c.Scheme.UnsafeConvertToVersion(in, outVersion)
+}
+
+// UnsafeObjectConvertor performs object conversion without copying the object structure,
+// for use when the converted object will not be reused or mutated. Primarily for use within
+// versioned codecs, which use the external object for serialization but do not return it.
+func UnsafeObjectConvertor(scheme *Scheme) ObjectConvertor {
+	return unsafeObjectConvertor{scheme}
 }
 
 // fieldPtr puts the address of fieldName, which must be a member of v,
@@ -179,3 +201,12 @@ func SetZeroValue(objPtr Object) error {
 	v.Set(reflect.Zero(v.Type()))
 	return nil
 }
+
+// DefaultFramer is valid for any stream that can read objects serially without
+// any separation in the stream.
+var DefaultFramer = defaultFramer{}
+
+type defaultFramer struct{}
+
+func (defaultFramer) NewFrameReader(r io.ReadCloser) io.ReadCloser { return r }
+func (defaultFramer) NewFrameWriter(w io.Writer) io.Writer         { return w }

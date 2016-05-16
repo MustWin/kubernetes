@@ -43,6 +43,12 @@ type fakeBinder struct {
 
 func (fb fakeBinder) Bind(binding *api.Binding) error { return fb.b(binding) }
 
+type fakePodConditionUpdater struct{}
+
+func (fc fakePodConditionUpdater) Update(pod *api.Pod, podCondition *api.PodCondition) error {
+	return nil
+}
+
 func podWithID(id, desiredHost string) *api.Pod {
 	return &api.Pod{
 		ObjectMeta: api.ObjectMeta{Name: id, SelfLink: testapi.Default.SelfLink("pods", id)},
@@ -55,7 +61,7 @@ func podWithID(id, desiredHost string) *api.Pod {
 func podWithPort(id, desiredHost string, port int) *api.Pod {
 	pod := podWithID(id, desiredHost)
 	pod.Spec.Containers = []api.Container{
-		{Name: "ctr", Ports: []api.ContainerPort{{HostPort: port}}},
+		{Name: "ctr", Ports: []api.ContainerPort{{HostPort: int32(port)}}},
 	}
 	return pod
 }
@@ -98,13 +104,14 @@ func TestScheduler(t *testing.T) {
 			expectErrorPod: podWithID("foo", ""),
 			eventReason:    "FailedScheduling",
 		}, {
-			sendPod:         podWithID("foo", ""),
-			algo:            mockScheduler{"machine1", nil},
-			expectBind:      &api.Binding{ObjectMeta: api.ObjectMeta{Name: "foo"}, Target: api.ObjectReference{Kind: "Node", Name: "machine1"}},
-			injectBindError: errB,
-			expectError:     errB,
-			expectErrorPod:  podWithID("foo", ""),
-			eventReason:     "FailedScheduling",
+			sendPod:          podWithID("foo", ""),
+			algo:             mockScheduler{"machine1", nil},
+			expectBind:       &api.Binding{ObjectMeta: api.ObjectMeta{Name: "foo"}, Target: api.ObjectReference{Kind: "Node", Name: "machine1"}},
+			expectAssumedPod: podWithID("foo", "machine1"),
+			injectBindError:  errB,
+			expectError:      errB,
+			expectErrorPod:   podWithID("foo", ""),
+			eventReason:      "FailedScheduling",
 		},
 	}
 
@@ -127,6 +134,7 @@ func TestScheduler(t *testing.T) {
 				gotBinding = b
 				return item.injectBindError
 			}},
+			PodConditionUpdater: fakePodConditionUpdater{},
 			Error: func(p *api.Pod, err error) {
 				gotPod = p
 				gotError = err
@@ -145,6 +153,7 @@ func TestScheduler(t *testing.T) {
 			close(called)
 		})
 		s.scheduleOne()
+		<-called
 		if e, a := item.expectAssumedPod, gotAssumedPod; !reflect.DeepEqual(e, a) {
 			t.Errorf("%v: assumed pod: wanted %v, got %v", i, e, a)
 		}
@@ -157,7 +166,6 @@ func TestScheduler(t *testing.T) {
 		if e, a := item.expectBind, gotBinding; !reflect.DeepEqual(e, a) {
 			t.Errorf("%v: error: %s", i, diff.ObjectDiff(e, a))
 		}
-		<-called
 		events.Stop()
 	}
 }
@@ -250,6 +258,7 @@ func TestSchedulerForgetAssumedPodAfterDelete(t *testing.T) {
 	// assumedPods: []
 
 	s.scheduleOne()
+	<-called
 	// queuedPodStore: []
 	// scheduledPodStore: [foo:8080]
 	// assumedPods: [foo:8080]
@@ -271,7 +280,6 @@ func TestSchedulerForgetAssumedPodAfterDelete(t *testing.T) {
 		t.Errorf("Expected exact match on binding: %s", diff.ObjectDiff(ex, ac))
 	}
 
-	<-called
 	events.Stop()
 
 	scheduledPodStore.Delete(pod)
@@ -312,6 +320,7 @@ func TestSchedulerForgetAssumedPodAfterDelete(t *testing.T) {
 	})
 
 	s.scheduleOne()
+	<-called
 
 	expectBind = &api.Binding{
 		ObjectMeta: api.ObjectMeta{Name: "bar"},
@@ -320,6 +329,5 @@ func TestSchedulerForgetAssumedPodAfterDelete(t *testing.T) {
 	if ex, ac := expectBind, gotBinding; !reflect.DeepEqual(ex, ac) {
 		t.Errorf("Expected exact match on binding: %s", diff.ObjectDiff(ex, ac))
 	}
-	<-called
 	events.Stop()
 }

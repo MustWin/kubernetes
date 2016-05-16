@@ -67,6 +67,7 @@ options:
     comma-separated list of pattern=N settings for file-filtered logging
 see_also:
 - get
+- set
 - describe
 - create
 - replace

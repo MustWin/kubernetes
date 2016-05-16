@@ -1,5 +1,3 @@
-// +build proto
-
 /*
 Copyright 2015 The Kubernetes Authors All rights reserved.
 
@@ -33,7 +31,7 @@ import (
 
 var (
 	// protoEncodingPrefix serves as a magic number for an encoded protobuf message on this serializer. All
-	// proto messages serialized by this schema will be preceeded by the bytes 0x6b 0x38 0x73, with the fourth
+	// proto messages serialized by this schema will be preceded by the bytes 0x6b 0x38 0x73, with the fourth
 	// byte being reserved for the encoding style. The only encoding style defined is 0x00, which means that
 	// the rest of the byte stream is a message of type k8s.io.kubernetes.pkg.runtime.Unknown (proto2).
 	//
@@ -122,14 +120,14 @@ func (s *Serializer) Decode(originalData []byte, gvk *unversioned.GroupVersionKi
 	}
 
 	actual := unk.GroupVersionKind()
-	copyKindDefaults(actual, gvk)
+	copyKindDefaults(&actual, gvk)
 
 	if intoUnknown, ok := into.(*runtime.Unknown); ok && intoUnknown != nil {
 		*intoUnknown = unk
 		if len(intoUnknown.ContentType) == 0 {
 			intoUnknown.ContentType = s.contentType
 		}
-		return intoUnknown, actual, nil
+		return intoUnknown, &actual, nil
 	}
 
 	if into != nil {
@@ -138,16 +136,16 @@ func (s *Serializer) Decode(originalData []byte, gvk *unversioned.GroupVersionKi
 		case runtime.IsNotRegisteredError(err):
 			pb, ok := into.(proto.Message)
 			if !ok {
-				return nil, actual, errNotMarshalable{reflect.TypeOf(into)}
+				return nil, &actual, errNotMarshalable{reflect.TypeOf(into)}
 			}
 			if err := proto.Unmarshal(unk.Raw, pb); err != nil {
-				return nil, actual, err
+				return nil, &actual, err
 			}
-			return into, actual, nil
+			return into, &actual, nil
 		case err != nil:
-			return nil, actual, err
+			return nil, &actual, err
 		default:
-			copyKindDefaults(actual, typed)
+			copyKindDefaults(&actual, typed)
 			// if the result of defaulting did not set a version or group, ensure that at least group is set
 			// (copyKindDefaults will not assign Group if version is already set). This guarantees that the group
 			// of into is set if there is no better information from the caller or object.
@@ -158,25 +156,24 @@ func (s *Serializer) Decode(originalData []byte, gvk *unversioned.GroupVersionKi
 	}
 
 	if len(actual.Kind) == 0 {
-		return nil, actual, runtime.NewMissingKindErr(fmt.Sprintf("%#v", unk.TypeMeta))
+		return nil, &actual, runtime.NewMissingKindErr(fmt.Sprintf("%#v", unk.TypeMeta))
 	}
 	if len(actual.Version) == 0 {
-		return nil, actual, runtime.NewMissingVersionErr(fmt.Sprintf("%#v", unk.TypeMeta))
+		return nil, &actual, runtime.NewMissingVersionErr(fmt.Sprintf("%#v", unk.TypeMeta))
 	}
 
-	return unmarshalToObject(s.typer, s.creater, actual, into, unk.Raw)
+	return unmarshalToObject(s.typer, s.creater, &actual, into, unk.Raw)
 }
 
 // EncodeToStream serializes the provided object to the given writer. Overrides is ignored.
 func (s *Serializer) EncodeToStream(obj runtime.Object, w io.Writer, overrides ...unversioned.GroupVersion) error {
 	var unk runtime.Unknown
-	if kind := obj.GetObjectKind().GroupVersionKind(); kind != nil {
-		unk = runtime.Unknown{
-			TypeMeta: runtime.TypeMeta{
-				Kind:       kind.Kind,
-				APIVersion: kind.GroupVersion().String(),
-			},
-		}
+	kind := obj.GetObjectKind().GroupVersionKind()
+	unk = runtime.Unknown{
+		TypeMeta: runtime.TypeMeta{
+			Kind:       kind.Kind,
+			APIVersion: kind.GroupVersion().String(),
+		},
 	}
 
 	prefixSize := uint64(len(s.prefix))
@@ -240,16 +237,6 @@ func (s *Serializer) RecognizesData(peek io.Reader) (bool, error) {
 		return false, nil
 	}
 	return bytes.Equal(s.prefix, prefix), nil
-}
-
-// NewFrameWriter implements stream framing for this serializer
-func (s *Serializer) NewFrameWriter(w io.Writer) io.Writer {
-	return framer.NewLengthDelimitedFrameWriter(w)
-}
-
-// NewFrameReader implements stream framing for this serializer
-func (s *Serializer) NewFrameReader(r io.Reader) io.Reader {
-	return framer.NewLengthDelimitedFrameReader(r)
 }
 
 // copyKindDefaults defaults dst to the value in src if dst does not have a value set.
@@ -346,7 +333,7 @@ func (s *RawSerializer) Decode(originalData []byte, gvk *unversioned.GroupVersio
 		intoUnknown.Raw = data
 		intoUnknown.ContentEncoding = ""
 		intoUnknown.ContentType = s.contentType
-		intoUnknown.SetGroupVersionKind(actual)
+		intoUnknown.SetGroupVersionKind(*actual)
 		return intoUnknown, actual, nil
 	}
 
@@ -431,18 +418,16 @@ func (s *RawSerializer) EncodeToStream(obj runtime.Object, w io.Writer, override
 	}
 }
 
-// RecognizesData implements the RecognizingDecoder interface - objects encoded with this serializer
-// have no innate identifying information and so cannot be recognized.
-func (s *RawSerializer) RecognizesData(peek io.Reader) (bool, error) {
-	return false, nil
-}
+var LengthDelimitedFramer = lengthDelimitedFramer{}
+
+type lengthDelimitedFramer struct{}
 
 // NewFrameWriter implements stream framing for this serializer
-func (s *RawSerializer) NewFrameWriter(w io.Writer) io.Writer {
+func (lengthDelimitedFramer) NewFrameWriter(w io.Writer) io.Writer {
 	return framer.NewLengthDelimitedFrameWriter(w)
 }
 
 // NewFrameReader implements stream framing for this serializer
-func (s *RawSerializer) NewFrameReader(r io.Reader) io.Reader {
+func (lengthDelimitedFramer) NewFrameReader(r io.ReadCloser) io.ReadCloser {
 	return framer.NewLengthDelimitedFrameReader(r)
 }

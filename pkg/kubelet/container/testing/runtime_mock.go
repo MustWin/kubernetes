@@ -68,8 +68,8 @@ func (r *Mock) SyncPod(pod *api.Pod, apiStatus api.PodStatus, status *PodStatus,
 	return args.Get(0).(PodSyncResult)
 }
 
-func (r *Mock) KillPod(pod *api.Pod, runningPod Pod) error {
-	args := r.Called(pod, runningPod)
+func (r *Mock) KillPod(pod *api.Pod, runningPod Pod, gracePeriodOverride *int64) error {
+	args := r.Called(pod, runningPod, gracePeriodOverride)
 	return args.Error(0)
 }
 
@@ -96,11 +96,6 @@ func (r *Mock) ExecInContainer(containerID ContainerID, cmd []string, stdin io.R
 func (r *Mock) AttachContainer(containerID ContainerID, stdin io.Reader, stdout, stderr io.WriteCloser, tty bool) error {
 	args := r.Called(containerID, stdin, stdout, stderr, tty)
 	return args.Error(0)
-}
-
-func (r *Mock) RunInContainer(containerID ContainerID, cmd []string) ([]byte, error) {
-	args := r.Called(containerID, cmd)
-	return args.Get(0).([]byte), args.Error(1)
 }
 
 func (r *Mock) GetContainerLogs(pod *api.Pod, containerID ContainerID, logOptions *api.PodLogOptions, stdout, stderr io.Writer) (err error) {
@@ -136,4 +131,9 @@ func (r *Mock) PortForward(pod *Pod, port uint16, stream io.ReadWriteCloser) err
 func (r *Mock) GarbageCollect(gcPolicy ContainerGCPolicy) error {
 	args := r.Called(gcPolicy)
 	return args.Error(0)
+}
+
+func (r *Mock) ImageStats() (*ImageStats, error) {
+	args := r.Called()
+	return args.Get(0).(*ImageStats), args.Error(1)
 }

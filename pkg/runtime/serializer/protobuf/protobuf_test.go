@@ -1,5 +1,3 @@
-// +build proto
-
 /*
 Copyright 2015 The Kubernetes Authors All rights reserved.
 
@@ -36,12 +34,12 @@ import (
 )
 
 type testObject struct {
-	gvk *unversioned.GroupVersionKind
+	gvk unversioned.GroupVersionKind
 }
 
-func (d *testObject) GetObjectKind() unversioned.ObjectKind                 { return d }
-func (d *testObject) SetGroupVersionKind(gvk *unversioned.GroupVersionKind) { d.gvk = gvk }
-func (d *testObject) GroupVersionKind() *unversioned.GroupVersionKind       { return d.gvk }
+func (d *testObject) GetObjectKind() unversioned.ObjectKind                { return d }
+func (d *testObject) SetGroupVersionKind(gvk unversioned.GroupVersionKind) { d.gvk = gvk }
+func (d *testObject) GroupVersionKind() unversioned.GroupVersionKind       { return d.gvk }
 
 type testMarshalable struct {
 	testObject
@@ -108,7 +106,7 @@ func TestEncode(t *testing.T) {
 		0x22, 0x00, // content-encoding
 	}
 	obj2 := &testMarshalable{
-		testObject: testObject{gvk: &unversioned.GroupVersionKind{Kind: "test", Group: "other", Version: "version"}},
+		testObject: testObject{gvk: unversioned.GroupVersionKind{Kind: "test", Group: "other", Version: "version"}},
 		data:       []byte{0x01, 0x02, 0x03},
 	}
 	wire2 := []byte{
@@ -297,6 +295,18 @@ func TestDecodeObjects(t *testing.T) {
 	}).Marshal()
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	unk2 := &runtime.Unknown{
+		TypeMeta: runtime.TypeMeta{Kind: "Pod", APIVersion: "v1"},
+	}
+	wire2 := make([]byte, len(wire1)*2)
+	n, err := unk2.NestedMarshalTo(wire2, obj1, uint64(obj1.Size()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != len(wire1) || !bytes.Equal(wire1, wire2[:n]) {
+		t.Fatalf("unexpected wire:\n%s", hex.Dump(wire2[:n]))
 	}
 
 	wire1 = append([]byte{0x6b, 0x38, 0x73, 0x00}, wire1...)

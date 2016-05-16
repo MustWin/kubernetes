@@ -131,8 +131,8 @@ type ProvisionableVolumePlugin interface {
 // to a node before mounting.
 type AttachableVolumePlugin interface {
 	VolumePlugin
-	NewAttacher(spec *Spec) (Attacher, error)
-	NewDetacher(name string, podUID types.UID) (Detacher, error)
+	NewAttacher() (Attacher, error)
+	NewDetacher() (Detacher, error)
 }
 
 // VolumeHost is an interface that plugins can use to access the kubelet.
@@ -272,7 +272,7 @@ func (pm *VolumePluginMgr) InitPlugins(plugins []VolumePlugin, host VolumeHost) 
 	allErrs := []error{}
 	for _, plugin := range plugins {
 		name := plugin.Name()
-		if !validation.IsQualifiedName(name) {
+		if len(validation.IsQualifiedName(name)) != 0 {
 			allErrs = append(allErrs, fmt.Errorf("volume plugin has invalid name: %#v", plugin))
 			continue
 		}

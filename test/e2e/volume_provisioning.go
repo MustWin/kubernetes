@@ -33,7 +33,7 @@ const (
 	// Requested size of the volume
 	requestedSize = "1500Mi"
 	// Expected size of the volume is 2GiB, because all three supported cloud
-	// providers  allocate volumes in 1GiB chunks.
+	// providers allocate volumes in 1GiB chunks.
 	expectedSize = "2Gi"
 )
 
@@ -91,7 +91,7 @@ var _ = framework.KubeDescribe("Dynamic provisioning", func() {
 			// We start two pods:
 			// - The first writes 'hello word' to the /mnt/test (= the volume).
 			// - The second one runs grep 'hello world' on /mnt/test.
-			// If both suceed, Kubernetes actually allocated something that is
+			// If both succeed, Kubernetes actually allocated something that is
 			// persistent across pods.
 			By("checking the created volume is writable")
 			runInPodWithVolume(c, ns, claim.Name, "echo 'hello world' > /mnt/test/data")
@@ -110,16 +110,16 @@ var _ = framework.KubeDescribe("Dynamic provisioning", func() {
 			// 10 minutes here. There is no way how to see if kubelet is
 			// finished with cleaning volumes. A small sleep here actually
 			// speeds up the test!
-			// One minute should be enough to clean up the pods properly.
-			// Detaching e.g. a Cinder volume takes some time.
+			// Three minutes should be enough to clean up the pods properly.
+			// We've seen GCE PD detach to take more than 1 minute.
 			By("Sleeping to let kubelet destroy all pods")
-			time.Sleep(time.Minute)
+			time.Sleep(3 * time.Minute)
 
 			By("deleting the claim")
 			framework.ExpectNoError(c.PersistentVolumeClaims(ns).Delete(claim.Name))
 
 			// Wait for the PV to get deleted too.
-			framework.ExpectNoError(framework.WaitForPersistentVolumeDeleted(c, pv.Name, 1*time.Second, 10*time.Minute))
+			framework.ExpectNoError(framework.WaitForPersistentVolumeDeleted(c, pv.Name, 5*time.Second, 20*time.Minute))
 		})
 	})
 })

@@ -20,6 +20,10 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/apimachinery/registered"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
+	unversionedautoscaling "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/autoscaling/unversioned"
+	fakeunversionedautoscaling "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/autoscaling/unversioned/fake"
+	unversionedbatch "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/batch/unversioned"
+	fakeunversionedbatch "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/batch/unversioned/fake"
 	unversionedcore "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/unversioned"
 	fakeunversionedcore "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/unversioned/fake"
 	unversionedextensions "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/extensions/unversioned"
@@ -56,17 +60,27 @@ type Clientset struct {
 }
 
 func (c *Clientset) Discovery() discovery.DiscoveryInterface {
-	return &fakediscovery.FakeDiscovery{&c.Fake}
+	return &fakediscovery.FakeDiscovery{Fake: &c.Fake}
 }
 
 var _ clientset.Interface = &Clientset{}
 
 // Core retrieves the CoreClient
 func (c *Clientset) Core() unversionedcore.CoreInterface {
-	return &fakeunversionedcore.FakeCore{&c.Fake}
+	return &fakeunversionedcore.FakeCore{Fake: &c.Fake}
 }
 
 // Extensions retrieves the ExtensionsClient
 func (c *Clientset) Extensions() unversionedextensions.ExtensionsInterface {
-	return &fakeunversionedextensions.FakeExtensions{&c.Fake}
+	return &fakeunversionedextensions.FakeExtensions{Fake: &c.Fake}
+}
+
+// Autoscaling retrieves the AutoscalingClient
+func (c *Clientset) Autoscaling() unversionedautoscaling.AutoscalingInterface {
+	return &fakeunversionedautoscaling.FakeAutoscaling{Fake: &c.Fake}
+}
+
+// Batch retrieves the BatchClient
+func (c *Clientset) Batch() unversionedbatch.BatchInterface {
+	return &fakeunversionedbatch.FakeBatch{Fake: &c.Fake}
 }

@@ -55,7 +55,17 @@ ensure-packages() {
 
 # A hookpoint for setting up local devices
 ensure-local-disks() {
-  :
+ for ssd in /dev/disk/by-id/google-local-ssd-*; do
+    if [ -e "$ssd" ]; then
+      ssdnum=`echo $ssd | sed -e 's/\/dev\/disk\/by-id\/google-local-ssd-\([0-9]*\)/\1/'`
+      echo "Formatting and mounting local SSD $ssd to /mnt/ssd$ssdnum"
+      mkdir -p /mnt/ssd$ssdnum
+      /usr/share/google/safe_format_and_mount -m "mkfs.ext4 -F" "${ssd}" /mnt/ssd$ssdnum &>/var/log/local-ssd-$ssdnum-mount.log || \
+      { echo "Local SSD $ssdnum mount failed, review /var/log/local-ssd-$ssdnum-mount.log"; return 1; }
+    else
+      echo "No local SSD disks found."
+    fi
+  done
 }
 
 function ensure-install-dir() {
@@ -434,11 +444,12 @@ hairpin_mode: '$(echo "$HAIRPIN_MODE" | sed -e "s/'/''/g")'
 opencontrail_tag: '$(echo "$OPENCONTRAIL_TAG" | sed -e "s/'/''/g")'
 opencontrail_kubernetes_tag: '$(echo "$OPENCONTRAIL_KUBERNETES_TAG")'
 opencontrail_public_subnet: '$(echo "$OPENCONTRAIL_PUBLIC_SUBNET")'
-enable_manifest_url: '$(echo "$ENABLE_MANIFEST_URL" | sed -e "s/'/''/g")'
-manifest_url: '$(echo "$MANIFEST_URL" | sed -e "s/'/''/g")'
-manifest_url_header: '$(echo "$MANIFEST_URL_HEADER" | sed -e "s/'/''/g")'
-num_nodes: $(echo "${NUM_NODES}" | sed -e "s/'/''/g")
+enable_manifest_url: '$(echo "${ENABLE_MANIFEST_URL:-}" | sed -e "s/'/''/g")'
+manifest_url: '$(echo "${MANIFEST_URL:-}" | sed -e "s/'/''/g")'
+manifest_url_header: '$(echo "${MANIFEST_URL_HEADER:-}" | sed -e "s/'/''/g")'
+num_nodes: $(echo "${NUM_NODES:-}" | sed -e "s/'/''/g")
 e2e_storage_test_environment: '$(echo "$E2E_STORAGE_TEST_ENVIRONMENT" | sed -e "s/'/''/g")'
+kube_uid: '$(echo "${KUBE_UID}" | sed -e "s/'/''/g")'
 EOF
     if [ -n "${KUBELET_PORT:-}" ]; then
       cat <<EOF >>/srv/salt-overlay/pillar/cluster-params.sls
@@ -524,6 +535,13 @@ EOF
 node_labels: '$(echo "${NODE_LABELS}" | sed -e "s/'/''/g")'
 EOF
     fi
+    if [[ "${ENABLE_NODE_AUTOSCALER:-false}" == "true" ]]; then
+      cat <<EOF >>/srv/salt-overlay/pillar/cluster-params.sls
+enable_node_autoscaler: '$(echo "${ENABLE_NODE_AUTOSCALER}" | sed -e "s/'/''/g")'
+autoscaler_mig_config: '$(echo "${AUTOSCALER_MIG_CONFIG}" | sed -e "s/'/''/g")'
+EOF
+    fi
+
 }
 
 # The job of this function is simple, but the basic regular expression syntax makes
@@ -579,17 +597,6 @@ function create-salt-master-auth() {
       echo "${KUBE_BEARER_TOKEN},admin,admin" > "${KNOWN_TOKENS_FILE}";
       echo "${KUBELET_TOKEN},kubelet,kubelet" >> "${KNOWN_TOKENS_FILE}";
       echo "${KUBE_PROXY_TOKEN},kube_proxy,kube_proxy" >> "${KNOWN_TOKENS_FILE}")
-
-    # Generate tokens for other "service accounts".  Append to known_tokens.
-    #
-    # NB: If this list ever changes, this script actually has to
-    # change to detect the existence of this file, kill any deleted
-    # old tokens and add any new tokens (to handle the upgrade case).
-    local -r service_accounts=("system:scheduler" "system:controller_manager" "system:logging" "system:monitoring")
-    for account in "${service_accounts[@]}"; do
-      token=$(dd if=/dev/urandom bs=128 count=1 2>/dev/null | base64 | tr -d "=+/" | dd bs=32 count=1 2>/dev/null)
-      echo "${token},${account},${account}" >> "${KNOWN_TOKENS_FILE}"
-    done
   fi
 }
 
@@ -775,6 +782,13 @@ EOF
   advertise_address: '${EXTERNAL_IP}'
   proxy_ssh_user: '${PROXY_SSH_USER}'
 EOF
+  fi
+
+  if [[ -n "${NODE_INSTANCE_PREFIX:-}" ]]; then
+    cat <<EOF >>/etc/gce.conf
+node-tags = ${NODE_INSTANCE_PREFIX}
+EOF
+    CLOUD_CONFIG=/etc/gce.conf
   fi
 
   if [[ -n "${MULTIZONE:-}" ]]; then

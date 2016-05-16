@@ -207,31 +207,10 @@ var _ = framework.KubeDescribe("Addon update", func() {
 		var err error
 		sshClient, err = getMasterSSHClient()
 		Expect(err).NotTo(HaveOccurred())
-
-		// Reduce the addon update intervals so that we have faster response
-		// to changes in the addon directory.
-		// do not use "service" command because it clears the environment variables
-		switch framework.TestContext.OSDistro {
-		case "debian":
-			sshExecAndVerify(sshClient, "sudo TEST_ADDON_CHECK_INTERVAL_SEC=1 /etc/init.d/kube-addons restart")
-		case "trusty":
-			sshExecAndVerify(sshClient, "sudo initctl restart kube-addons TEST_ADDON_CHECK_INTERVAL_SEC=1")
-		default:
-			framework.Failf("Unsupported OS distro type %s", framework.TestContext.OSDistro)
-		}
 	})
 
 	AfterEach(func() {
 		if sshClient != nil {
-			// restart addon_update with the default options
-			switch framework.TestContext.OSDistro {
-			case "debian":
-				sshExec(sshClient, "sudo /etc/init.d/kube-addons restart")
-			case "trusty":
-				sshExec(sshClient, "sudo initctl restart kube-addons")
-			default:
-				framework.Failf("Unsupported OS distro type %s", framework.TestContext.OSDistro)
-			}
 			sshClient.Close()
 		}
 	})
@@ -345,8 +324,8 @@ func waitForReplicationControllerInAddonTest(c *client.Client, addonNamespace, n
 	framework.ExpectNoError(framework.WaitForReplicationController(c, addonNamespace, name, exist, addonTestPollInterval, addonTestPollTimeout))
 }
 
-// TODO marekbiskup 2015-06-11: merge the ssh code into pkg/util/ssh.go after
-// kubernetes v1.0 is released. In particular the code of sshExec.
+// TODO use the framework.SSH code, either adding an SCP to it or copying files
+// differently.
 func getMasterSSHClient() (*ssh.Client, error) {
 	// Get a signer for the provider.
 	signer, err := framework.GetSigner(framework.TestContext.Provider)
@@ -354,8 +333,12 @@ func getMasterSSHClient() (*ssh.Client, error) {
 		return nil, fmt.Errorf("error getting signer for provider %s: '%v'", framework.TestContext.Provider, err)
 	}
 
+	sshUser := os.Getenv("KUBE_SSH_USER")
+	if sshUser == "" {
+		sshUser = os.Getenv("USER")
+	}
 	config := &ssh.ClientConfig{
-		User: os.Getenv("USER"),
+		User: sshUser,
 		Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
 	}
 

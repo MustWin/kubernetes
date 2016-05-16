@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"os/exec"
 	"strings"
@@ -34,13 +35,6 @@ import (
 	"github.com/onsi/ginkgo/types"
 	. "github.com/onsi/gomega"
 )
-
-var kubeletAddress = flag.String("kubelet-address", "http://127.0.0.1:10255", "Host and port of the kubelet")
-var apiServerAddress = flag.String("api-server-address", "http://127.0.0.1:8080", "Host and port of the api server")
-var nodeName = flag.String("node-name", "", "Name of the node")
-var buildServices = flag.Bool("build-services", true, "If true, build local executables")
-var startServices = flag.Bool("start-services", true, "If true, start local node services")
-var stopServices = flag.Bool("stop-services", true, "If true, stop local node services after running tests")
 
 var e2es *e2eService
 
@@ -65,6 +59,11 @@ var _ = BeforeSuite(func() {
 		*nodeName = strings.TrimSpace(fmt.Sprintf("%s", output))
 	}
 
+	// TODO(yifan): Temporary workaround to disable coreos from auto restart
+	// by masking the locksmithd.
+	// We should mask locksmithd when provisioning the machine.
+	maskLocksmithdOnCoreos()
+
 	if *startServices {
 		e2es = newE2eService(*nodeName)
 		if err := e2es.start(); err != nil {
@@ -82,6 +81,7 @@ var _ = AfterSuite(func() {
 		glog.Infof("Stopping node services...")
 		e2es.stop()
 	}
+	glog.Infof("Tests Finished")
 })
 
 var _ Reporter = &LogReporter{}
@@ -91,7 +91,7 @@ type LogReporter struct{}
 func (lr *LogReporter) SpecSuiteWillBegin(config config.GinkgoConfigType, summary *types.SuiteSummary) {
 	b := &bytes.Buffer{}
 	b.WriteString("******************************************************\n")
-	glog.V(2).Infof(b.String())
+	glog.Infof(b.String())
 }
 
 func (lr *LogReporter) BeforeSuiteDidRun(setupSummary *types.SetupSummary) {}
@@ -115,5 +115,18 @@ func (lr *LogReporter) SpecSuiteDidEnd(summary *types.SuiteSummary) {
 		b.WriteString(fmt.Sprintf("etcd output:\n%s\n", e2es.etcdCombinedOut.String()))
 	}
 	b.WriteString("******************************************************\n")
-	glog.V(2).Infof(b.String())
+	glog.Infof(b.String())
+}
+
+func maskLocksmithdOnCoreos() {
+	data, err := ioutil.ReadFile("/etc/os-release")
+	if err != nil {
+		glog.Fatalf("Could not read /etc/os-release: %v", err)
+	}
+	if bytes.Contains(data, []byte("ID=coreos")) {
+		if output, err := exec.Command("sudo", "systemctl", "mask", "--now", "locksmithd").CombinedOutput(); err != nil {
+			glog.Fatalf("Could not mask locksmithd: %v, output: %q", err, string(output))
+		}
+	}
+	glog.Infof("Locksmithd is masked successfully")
 }

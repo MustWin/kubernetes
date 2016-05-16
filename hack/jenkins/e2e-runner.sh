@@ -21,6 +21,8 @@ set -o nounset
 set -o pipefail
 set -o xtrace
 
+: ${KUBE_GCS_RELEASE_BUCKET:="kubernetes-release"}
+
 function running_in_docker() {
     grep -q docker /proc/self/cgroup
 }
@@ -32,10 +34,7 @@ function fetch_output_tars() {
 }
 
 function fetch_server_version_tars() {
-    local -r msg=$(gcloud ${CMD_GROUP:-} container get-server-config --project=${PROJECT} --zone=${ZONE} | grep defaultClusterVersion)
-    # msg will look like "defaultClusterVersion: 1.0.1". Strip
-    # everything up to, including ": "
-    local -r build_version="v${msg##*: }"
+    local -r build_version="v$(gcloud ${CMD_GROUP:-} container get-server-config --project=${PROJECT} --zone=${ZONE}  --format='value(defaultClusterVersion)')"
     fetch_tars_from_gcs "release" "${build_version}"
     unpack_binaries
 }
@@ -46,7 +45,7 @@ function fetch_published_version_tars() {
     local -r published_version="${1}"
     IFS='/' read -a varr <<< "${published_version}"
     bucket="${varr[0]}"
-    build_version=$(gsutil cat gs://kubernetes-release/${published_version}.txt)
+    build_version=$(gsutil cat gs://${KUBE_GCS_RELEASE_BUCKET}/${published_version}.txt)
     echo "Using published version $bucket/$build_version (from ${published_version})"
     fetch_tars_from_gcs "${bucket}" "${build_version}"
     unpack_binaries
@@ -66,8 +65,8 @@ function fetch_tars_from_gcs() {
     local -r build_version="${2}"
     echo "Pulling binaries from GCS; using server version ${bucket}/${build_version}."
     gsutil -mq cp \
-        "gs://kubernetes-release/${bucket}/${build_version}/kubernetes.tar.gz" \
-        "gs://kubernetes-release/${bucket}/${build_version}/kubernetes-test.tar.gz" \
+        "gs://${KUBE_GCS_RELEASE_BUCKET}/${bucket}/${build_version}/kubernetes.tar.gz" \
+        "gs://${KUBE_GCS_RELEASE_BUCKET}/${bucket}/${build_version}/kubernetes-test.tar.gz" \
         .
 }
 
@@ -137,6 +136,24 @@ function install_google_cloud_sdk_tarball() {
     export PATH=${install_dir}/google-cloud-sdk/bin:${PATH}
 }
 
+# Only call after attempting to bring the cluster up. Don't call after
+# bringing the cluster down.
+function dump_cluster_logs_and_exit() {
+    local -r exit_status=$?
+    if [[ -x "cluster/log-dump.sh"  ]]; then
+        ./cluster/log-dump.sh "${ARTIFACTS}"
+    fi
+    if [[ "${E2E_DOWN,,}" == "true" ]]; then
+      # If we tried to bring the cluster up, make a courtesy attempt
+      # to bring the cluster down so we're not leaving resources
+      # around. Unlike later, don't sleep beforehand, though. (We're
+      # just trying to tear down as many resources as we can as fast
+      # as possible and don't even know if we brought the master up.)
+      go run ./hack/e2e.go ${E2E_OPT:-} -v --down || true
+    fi
+    exit ${exit_status}
+}
+
 ### Pre Set Up ###
 if running_in_docker; then
     curl -fsSL --retry 3 -o "${WORKSPACE}/google-cloud-sdk.tar.gz" 'https://dl.google.com/dl/cloudsdk/channels/rapid/google-cloud-sdk.tar.gz'
@@ -164,9 +181,9 @@ if [[ -n "${CLOUDSDK_BUCKET:-}" ]]; then
 fi
 
 # We get the image project and name for Trusty dynamically.
-if [[ "${JENKINS_USE_TRUSTY_IMAGES:-}" =~ ^[yY]$ ]]; then
+if [[ -n "${JENKINS_TRUSTY_IMAGE_TYPE:-}" ]]; then
   trusty_image_project="$(get_trusty_image_project)"
-  trusty_image="$(get_latest_trusty_image "${trusty_image_project}" "dev")"
+  trusty_image="$(get_latest_trusty_image "${trusty_image_project}" "${JENKINS_TRUSTY_IMAGE_TYPE}")"
   export KUBE_GCE_MASTER_PROJECT="${trusty_image_project}"
   export KUBE_GCE_MASTER_IMAGE="${trusty_image}"
   export KUBE_OS_DISTRIBUTION="trusty"
@@ -270,10 +287,11 @@ declare -r gcp_list_resources_script="./cluster/gce/list-resources.sh"
 declare -r gcp_resources_before="${ARTIFACTS}/gcp-resources-before.txt"
 declare -r gcp_resources_cluster_up="${ARTIFACTS}/gcp-resources-cluster-up.txt"
 declare -r gcp_resources_after="${ARTIFACTS}/gcp-resources-after.txt"
-# TODO(15492): figure out some way to run this script even if it doesn't exist
-# in the Kubernetes tarball.
 if [[ ( ${KUBERNETES_PROVIDER} == "gce" || ${KUBERNETES_PROVIDER} == "gke" ) && -x "${gcp_list_resources_script}" ]]; then
   gcp_list_resources="true"
+  # Always pull the script from HEAD, overwriting the local one if it exists.
+  # We do this to pick up fixes if we are running tests from a branch or tag.
+  curl -fsS --retry 3 "https://raw.githubusercontent.com/kubernetes/kubernetes/master/cluster/gce/list-resources.sh" > "${gcp_list_resources_script}"
 else
   gcp_list_resources="false"
 fi
@@ -288,13 +306,7 @@ fi
 if [[ "${E2E_UP,,}" == "true" ]]; then
     # We want to try to gather logs even if kube-up fails, so collect the
     # result here and fail after dumping logs if it's nonzero.
-    go run ./hack/e2e.go ${E2E_OPT:-} -v --up && up_result="$?" || up_result="$?"
-    if [[ "${up_result}" -ne 0 ]]; then
-        if [[ -x "cluster/log-dump.sh"  ]]; then
-            ./cluster/log-dump.sh "${ARTIFACTS}"
-        fi
-        exit "${up_result}"
-    fi
+    go run ./hack/e2e.go ${E2E_OPT:-} -v --up || dump_cluster_logs_and_exit
     go run ./hack/e2e.go -v --ctl="version --match-server-version=false"
     if [[ "${gcp_list_resources}" == "true" ]]; then
       ${gcp_list_resources_script} > "${gcp_resources_cluster_up}"
@@ -302,20 +314,37 @@ if [[ "${E2E_UP,,}" == "true" ]]; then
 fi
 
 # Allow download & unpack of alternate version of tests, for cross-version & upgrade testing.
-if [[ -n "${JENKINS_PUBLISHED_TEST_VERSION:-}" ]]; then
+#
+# JENKINS_PUBLISHED_SKEW_VERSION downloads an alternate version of Kubernetes
+# for testing, moving the old one to kubernetes_old.
+#
+# E2E_UPGRADE_TEST=true triggers a run of the e2e tests, to do something like
+# upgrade the cluster, before the main test run.  It uses
+# GINKGO_UPGRADE_TESTS_ARGS for the test run.
+#
+# JENKINS_USE_SKEW_TESTS=true will run tests from the skewed version rather
+# than the original version; it is mutuall exclusive with
+# JENKINS_USE_SKEW_KUBECTL.
+#
+# JENKINS_USE_SKEW_KUBECTL=true will use the skewed version of Kubectl; it is
+# mutually exclusive with JENKINS_USE_SKEW_TESTS.
+if [[ -n "${JENKINS_PUBLISHED_SKEW_VERSION:-}" ]]; then
     cd ..
     mv kubernetes kubernetes_old
-    fetch_published_version_tars "${JENKINS_PUBLISHED_TEST_VERSION}"
+    fetch_published_version_tars "${JENKINS_PUBLISHED_SKEW_VERSION}"
     cd kubernetes
     # Upgrade the cluster before running other tests
     if [[ "${E2E_UPGRADE_TEST:-}" == "true" ]]; then
-	# Add a report prefix for the e2e tests so that the tests don't get overwritten when we run
-	# the rest of the e2es.
+        # Add a report prefix for the e2e tests so that the tests don't get overwritten when we run
+        # the rest of the e2es.
         E2E_REPORT_PREFIX='upgrade' e2e_test "${GINKGO_UPGRADE_TEST_ARGS:-}"
-	# If JENKINS_USE_OLD_TESTS is set, back out into the old tests now that we've upgraded.
-        if [[ "${JENKINS_USE_OLD_TESTS:-}" == "true" ]]; then
-            cd ../kubernetes_old
-        fi
+    fi
+    if [[ "${JENKINS_USE_SKEW_TESTS:-}" != "true" ]]; then
+        # Back out into the old tests now that we've downloaded & maybe upgraded.
+        cd ../kubernetes_old
+    elif [[ "${JENKINS_USE_SKEW_KUBECTL:-}" == "true" ]]; then
+        # Append kubectl-path of skewed kubectl to test args
+        GINKGO_TEST_ARGS="${GINKGO_TEST_ARGS:-} --kubectl-path=$(pwd)/../kubernetes/cluster/kubectl.sh"
     fi
 fi
 
@@ -332,17 +361,9 @@ if [[ "${USE_KUBEMARK:-}" == "true" ]]; then
   NUM_NODES=${KUBEMARK_NUM_NODES:-$NUM_NODES}
   MASTER_SIZE=${KUBEMARK_MASTER_SIZE:-$MASTER_SIZE}
   # If start-kubemark fails, we trigger empty set of tests that would trigger storing logs from the base cluster.
-  ./test/kubemark/start-kubemark.sh && kubemark_started="$?" || kubemark_started="$?"
-  if [[ "${kubemark_started}" != "0" ]]; then
-    go run ./hack/e2e.go -v --test --test_args="--ginkgo.focus=DO\sNOT\sMATCH\sANYTHING"
-    exit 1
-  fi
+  ./test/kubemark/start-kubemark.sh || dump_cluster_logs_and_exit
   # Similarly, if tests fail, we trigger empty set of tests that would trigger storing logs from the base cluster.
-  ./test/kubemark/run-e2e-tests.sh --ginkgo.focus="${KUBEMARK_TESTS}" --gather-resource-usage="false" && kubemark_succeeded="$?" || kubemark_succeeded="$?"
-  if [[ "${kubemark_succeeded}" != "0" ]]; then
-    go run ./hack/e2e.go -v --test --test_args="--ginkgo.focus=DO\sNOT\sMATCH\sANYTHING"
-    exit 1
-  fi
+  ./test/kubemark/run-e2e-tests.sh --ginkgo.focus="${KUBEMARK_TESTS:-starting\s30\spods}" "${KUBEMARK_TEST_ARGS:-}" || dump_cluster_logs_and_exit
   ./test/kubemark/stop-kubemark.sh
   NUM_NODES=${NUM_NODES_BKP}
   MASTER_SIZE=${MASTER_SIZE_BKP}

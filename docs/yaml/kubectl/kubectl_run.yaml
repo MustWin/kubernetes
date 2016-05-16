@@ -45,7 +45,7 @@ options:
     If the pod is started in interactive mode or with stdin, leave stdin open after the first attach completes. By default, stdin will be closed after the first attach completes.
 - name: limits
   usage: |
-    The resource requirement limits for this container.  For example, 'cpu=200m,memory=512Mi'
+    The resource requirement limits for this container.  For example, 'cpu=200m,memory=512Mi'.  Note that server side components may assign limits depending on the server configuration, such as limit ranges.
 - name: no-headers
   default_value: "false"
   usage: When using the default output, don't print headers.
@@ -73,7 +73,7 @@ options:
     Number of replicas to create for this container. Default is 1.
 - name: requests
   usage: |
-    The resource requirement requests for this container.  For example, 'cpu=100m,memory=256Mi'
+    The resource requirement requests for this container.  For example, 'cpu=100m,memory=256Mi'.  Note that server side components may assign requests depending on the server configuration, such as limit ranges.
 - name: restart
   default_value: Always
   usage: |
@@ -114,9 +114,9 @@ options:
   usage: |
     Template string or path to template file to use when -o=go-template, -o=go-template-file. The template format is golang templates [http://golang.org/pkg/text/template/#pkg-overview].
 - name: tty
+  shorthand: t
   default_value: "false"
-  usage: |
-    Allocated a TTY for each container in the pod.  Because -t is currently shorthand for --template, -t is not supported for --tty. This shorthand is deprecated and we expect to adopt -t for --tty soon.
+  usage: Allocated a TTY for each container in the pod.
 inherited_options:
 - name: alsologtostderr
   default_value: "false"
@@ -198,7 +198,7 @@ example: |-
   kubectl run nginx --image=nginx --overrides='{ "apiVersion": "v1", "spec": { ... } }'
 
   # Start a single instance of busybox and keep it in the foreground, don't restart it if it exits.
-  kubectl run -i --tty busybox --image=busybox --restart=Never
+  kubectl run -i -t busybox --image=busybox --restart=Never
 
   # Start the nginx container using the default command, but use custom arguments (arg1 .. argN) for that command.
   kubectl run nginx --image=nginx -- <arg1> <arg2> ... <argN>

@@ -42,7 +42,7 @@ import (
 
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/cloudprovider"
-	"k8s.io/kubernetes/pkg/credentialprovider/aws"
+	aws_credentials "k8s.io/kubernetes/pkg/credentialprovider/aws"
 	"k8s.io/kubernetes/pkg/types"
 
 	"github.com/golang/glog"
@@ -68,6 +68,25 @@ const TagNameSubnetPublicELB = "kubernetes.io/role/elb"
 // Currently we accept only the value "0.0.0.0/0" - other values are an error.
 // This lets us define more advanced semantics in future.
 const ServiceAnnotationLoadBalancerInternal = "service.beta.kubernetes.io/aws-load-balancer-internal"
+
+// Service annotation requesting a secure listener. Value is a valid certificate ARN.
+// For more, see http://docs.aws.amazon.com/ElasticLoadBalancing/latest/DeveloperGuide/elb-listener-config.html
+// CertARN is an IAM or CM certificate ARN, e.g. arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012
+const ServiceAnnotationLoadBalancerCertificate = "service.beta.kubernetes.io/aws-load-balancer-ssl-cert"
+
+// Service annotation specifying the protocol spoken by the backend (pod) behind a secure listener.
+// Only inspected when `aws-load-balancer-ssl-cert` is used.
+// If `http` (default) or `https`, an HTTPS listener that terminates the connection and parses headers is created.
+// If set to `ssl` or `tcp`, a "raw" SSL listener is used.
+const ServiceAnnotationLoadBalancerBEProtocol = "service.beta.kubernetes.io/aws-load-balancer-backend-protocol"
+
+// Maps from backend protocol to ELB protocol
+var backendProtocolMapping = map[string]string{
+	"https": "https",
+	"http":  "https",
+	"ssl":   "ssl",
+	"tcp":   "ssl",
+}
 
 // We sometimes read to see if something exists; then try to create it if we didn't find it
 // This can fail once in a consistent system if done in parallel
@@ -566,20 +585,7 @@ func getAvailabilityZone(metadata EC2Metadata) (string, error) {
 }
 
 func isRegionValid(region string) bool {
-	regions := [...]string{
-		"us-east-1",
-		"us-west-1",
-		"us-west-2",
-		"eu-west-1",
-		"eu-central-1",
-		"ap-southeast-1",
-		"ap-southeast-2",
-		"ap-northeast-1",
-		"cn-north-1",
-		"us-gov-west-1",
-		"sa-east-1",
-	}
-	for _, r := range regions {
+	for _, r := range aws_credentials.AWSRegions {
 		if r == region {
 			return true
 		}
@@ -1947,7 +1953,7 @@ func findTag(tags []*ec2.Tag, key string) (string, bool) {
 }
 
 // Finds the subnets associated with the cluster, by matching tags.
-// For maximal backwards compatability, if no subnets are tagged, it will fall-back to the current subnet.
+// For maximal backwards compatibility, if no subnets are tagged, it will fall-back to the current subnet.
 // However, in future this will likely be treated as an error.
 func (c *AWSCloud) findSubnets() ([]*ec2.Subnet, error) {
 	request := &ec2.DescribeSubnetsInput{}
@@ -2098,6 +2104,37 @@ func isSubnetPublic(rt []*ec2.RouteTable, subnetID string) (bool, error) {
 	return false, nil
 }
 
+// buildListener creates a new listener from the given port, adding an SSL certificate
+// if indicated by the appropriate annotations.
+func buildListener(port api.ServicePort, annotations map[string]string) (*elb.Listener, error) {
+	loadBalancerPort := int64(port.Port)
+	instancePort := int64(port.NodePort)
+	protocol := strings.ToLower(string(port.Protocol))
+	instanceProtocol := protocol
+
+	listener := &elb.Listener{}
+	listener.InstancePort = &instancePort
+	listener.LoadBalancerPort = &loadBalancerPort
+	certID := annotations[ServiceAnnotationLoadBalancerCertificate]
+	if certID != "" {
+		instanceProtocol = annotations[ServiceAnnotationLoadBalancerBEProtocol]
+		if instanceProtocol == "" {
+			protocol = "ssl"
+			instanceProtocol = "tcp"
+		} else {
+			protocol = backendProtocolMapping[instanceProtocol]
+			if protocol == "" {
+				return nil, fmt.Errorf("Invalid backend protocol %s for %s in %s", instanceProtocol, certID, ServiceAnnotationLoadBalancerBEProtocol)
+			}
+		}
+		listener.SSLCertificateId = &certID
+	}
+	listener.Protocol = &protocol
+	listener.InstanceProtocol = &instanceProtocol
+
+	return listener, nil
+}
+
 // EnsureLoadBalancer implements LoadBalancer.EnsureLoadBalancer
 func (s *AWSCloud) EnsureLoadBalancer(apiService *api.Service, hosts []string, annotations map[string]string) (*api.LoadBalancerStatus, error) {
 	glog.V(2).Infof("EnsureLoadBalancer(%v, %v, %v, %v, %v, %v, %v)",
@@ -2112,10 +2149,21 @@ func (s *AWSCloud) EnsureLoadBalancer(apiService *api.Service, hosts []string, a
 		return nil, fmt.Errorf("requested load balancer with no ports")
 	}
 
+	// Figure out what mappings we want on the load balancer
+	listeners := []*elb.Listener{}
 	for _, port := range apiService.Spec.Ports {
 		if port.Protocol != api.ProtocolTCP {
 			return nil, fmt.Errorf("Only TCP LoadBalancer is supported for AWS ELB")
 		}
+		if port.NodePort == 0 {
+			glog.Errorf("Ignoring port without NodePort defined: %v", port)
+			continue
+		}
+		listener, err := buildListener(port, annotations)
+		if err != nil {
+			return nil, err
+		}
+		listeners = append(listeners, listener)
 	}
 
 	if apiService.Spec.LoadBalancerIP != "" {
@@ -2196,26 +2244,6 @@ func (s *AWSCloud) EnsureLoadBalancer(apiService *api.Service, hosts []string, a
 		}
 	}
 	securityGroupIDs := []string{securityGroupID}
-
-	// Figure out what mappings we want on the load balancer
-	listeners := []*elb.Listener{}
-	for _, port := range apiService.Spec.Ports {
-		if port.NodePort == 0 {
-			glog.Errorf("Ignoring port without NodePort defined: %v", port)
-			continue
-		}
-		instancePort := int64(port.NodePort)
-		loadBalancerPort := int64(port.Port)
-		protocol := strings.ToLower(string(port.Protocol))
-
-		listener := &elb.Listener{}
-		listener.InstancePort = &instancePort
-		listener.LoadBalancerPort = &loadBalancerPort
-		listener.Protocol = &protocol
-		listener.InstanceProtocol = &protocol
-
-		listeners = append(listeners, listener)
-	}
 
 	// Build the load balancer itself
 	loadBalancer, err := s.ensureLoadBalancer(serviceName, loadBalancerName, listeners, subnetIDs, securityGroupIDs, internalELB)

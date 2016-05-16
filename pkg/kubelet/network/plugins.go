@@ -26,6 +26,7 @@ import (
 	"github.com/golang/glog"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/unversioned"
+	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	utilerrors "k8s.io/kubernetes/pkg/util/errors"
 	utilexec "k8s.io/kubernetes/pkg/util/exec"
@@ -51,7 +52,7 @@ const (
 type NetworkPlugin interface {
 	// Init initializes the plugin.  This will be called exactly once
 	// before any other methods are called.
-	Init(host Host) error
+	Init(host Host, hairpinMode componentconfig.HairpinMode) error
 
 	// Called on various events like:
 	// NET_PLUGIN_EVENT_POD_CIDR_CHANGE
@@ -67,13 +68,16 @@ type NetworkPlugin interface {
 	// SetUpPod is the method called after the infra container of
 	// the pod has been created but before the other containers of the
 	// pod are launched.
-	SetUpPod(namespace string, name string, podInfraContainerID kubecontainer.DockerID) error
+	SetUpPod(namespace string, name string, podInfraContainerID kubecontainer.ContainerID) error
 
 	// TearDownPod is the method called before a pod's infra container will be deleted
-	TearDownPod(namespace string, name string, podInfraContainerID kubecontainer.DockerID) error
+	TearDownPod(namespace string, name string, podInfraContainerID kubecontainer.ContainerID) error
 
 	// Status is the method called to obtain the ipv4 or ipv6 addresses of the container
-	Status(namespace string, name string, podInfraContainerID kubecontainer.DockerID) (*PodNetworkStatus, error)
+	GetPodNetworkStatus(namespace string, name string, podInfraContainerID kubecontainer.ContainerID) (*PodNetworkStatus, error)
+
+	// NetworkStatus returns error if the network plugin is in error state
+	Status() error
 }
 
 // PodNetworkStatus stores the network status of a pod (currently just the primary IP address)
@@ -101,11 +105,11 @@ type Host interface {
 }
 
 // InitNetworkPlugin inits the plugin that matches networkPluginName. Plugins must have unique names.
-func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, host Host) (NetworkPlugin, error) {
+func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, host Host, hairpinMode componentconfig.HairpinMode) (NetworkPlugin, error) {
 	if networkPluginName == "" {
 		// default to the no_op plugin
 		plug := &NoopNetworkPlugin{}
-		if err := plug.Init(host); err != nil {
+		if err := plug.Init(host, hairpinMode); err != nil {
 			return nil, err
 		}
 		return plug, nil
@@ -116,7 +120,7 @@ func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, host H
 	allErrs := []error{}
 	for _, plugin := range plugins {
 		name := plugin.Name()
-		if !validation.IsQualifiedName(name) {
+		if len(validation.IsQualifiedName(name)) != 0 {
 			allErrs = append(allErrs, fmt.Errorf("network plugin has invalid name: %#v", plugin))
 			continue
 		}
@@ -130,7 +134,7 @@ func InitNetworkPlugin(plugins []NetworkPlugin, networkPluginName string, host H
 
 	chosenPlugin := pluginMap[networkPluginName]
 	if chosenPlugin != nil {
-		err := chosenPlugin.Init(host)
+		err := chosenPlugin.Init(host, hairpinMode)
 		if err != nil {
 			allErrs = append(allErrs, fmt.Errorf("Network plugin %q failed init: %v", networkPluginName, err))
 		} else {
@@ -152,7 +156,7 @@ type NoopNetworkPlugin struct {
 
 const sysctlBridgeCallIptables = "net/bridge/bridge-nf-call-iptables"
 
-func (plugin *NoopNetworkPlugin) Init(host Host) error {
+func (plugin *NoopNetworkPlugin) Init(host Host, hairpinMode componentconfig.HairpinMode) error {
 	// Set bridge-nf-call-iptables=1 to maintain compatibility with older
 	// kubernetes versions to ensure the iptables-based kube proxy functions
 	// correctly.  Other plugins are responsible for setting this correctly
@@ -180,14 +184,18 @@ func (plugin *NoopNetworkPlugin) Capabilities() utilsets.Int {
 	return utilsets.NewInt()
 }
 
-func (plugin *NoopNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.DockerID) error {
+func (plugin *NoopNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID) error {
 	return nil
 }
 
-func (plugin *NoopNetworkPlugin) TearDownPod(namespace string, name string, id kubecontainer.DockerID) error {
+func (plugin *NoopNetworkPlugin) TearDownPod(namespace string, name string, id kubecontainer.ContainerID) error {
 	return nil
 }
 
-func (plugin *NoopNetworkPlugin) Status(namespace string, name string, id kubecontainer.DockerID) (*PodNetworkStatus, error) {
+func (plugin *NoopNetworkPlugin) GetPodNetworkStatus(namespace string, name string, id kubecontainer.ContainerID) (*PodNetworkStatus, error) {
 	return nil, nil
+}
+
+func (plugin *NoopNetworkPlugin) Status() error {
+	return nil
 }

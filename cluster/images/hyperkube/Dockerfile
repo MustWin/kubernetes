@@ -28,6 +28,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update -y \
     socat \
     curl \
     git \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
     && DEBIAN_FRONTEND=noninteractive apt-get autoremove -y \
     && DEBIAN_FRONTEND=noninteractive apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -50,9 +51,19 @@ COPY safe_format_and_mount /usr/share/google/safe_format_and_mount
 COPY setup-files.sh /setup-files.sh
 COPY make-ca-cert.sh /make-ca-cert.sh
 
+# easy-rsa package required by make-ca-cert
+ADD https://storage.googleapis.com/kubernetes-release/easy-rsa/easy-rsa.tar.gz /root/kube/
+
+RUN mkdir -p /opt/cni
+RUN curl https://storage.googleapis.com/kubernetes-release/network-plugins/cni-c864f0e1ea73719b8f4582402b0847064f9883b0.tar.gz \
+  | tar xzv -C /opt/cni
+
 # Make scripts executable
 RUN chmod a+rx \
         /hyperkube \
         /usr/share/google/safe_format_and_mount \
         /setup-files.sh \
         /make-ca-cert.sh
+
+# Create symlinks for each hyperkube server
+RUN /hyperkube --make-symlinks

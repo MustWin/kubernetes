@@ -35,6 +35,9 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/meta"
 	"k8s.io/kubernetes/pkg/api/unversioned"
+	"k8s.io/kubernetes/pkg/apis/apps"
+	"k8s.io/kubernetes/pkg/apis/autoscaling"
+	"k8s.io/kubernetes/pkg/apis/batch"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/runtime"
@@ -179,7 +182,7 @@ func (p *VersionedPrinter) PrintObj(obj runtime.Object, w io.Writer) error {
 		if version.IsEmpty() {
 			continue
 		}
-		converted, err := p.convertor.ConvertToVersion(obj, version.String())
+		converted, err := p.convertor.ConvertToVersion(obj, version)
 		if runtime.IsNotRegisteredError(err) {
 			continue
 		}
@@ -417,6 +420,7 @@ var replicaSetColumns = []string{"NAME", "DESIRED", "CURRENT", "AGE"}
 var jobColumns = []string{"NAME", "DESIRED", "SUCCESSFUL", "AGE"}
 var serviceColumns = []string{"NAME", "CLUSTER-IP", "EXTERNAL-IP", "PORT(S)", "AGE"}
 var ingressColumns = []string{"NAME", "RULE", "BACKEND", "ADDRESS", "AGE"}
+var petSetColumns = []string{"NAME", "DESIRED", "CURRENT", "AGE"}
 var endpointColumns = []string{"NAME", "ENDPOINTS", "AGE"}
 var nodeColumns = []string{"NAME", "STATUS", "AGE"}
 var daemonSetColumns = []string{"NAME", "DESIRED", "CURRENT", "NODE-SELECTOR", "AGE"}
@@ -457,6 +461,8 @@ func (h *HumanReadablePrinter) addDefaultHandlers() {
 	h.Handler(serviceColumns, printServiceList)
 	h.Handler(ingressColumns, printIngress)
 	h.Handler(ingressColumns, printIngressList)
+	h.Handler(petSetColumns, printPetSet)
+	h.Handler(petSetColumns, printPetSetList)
 	h.Handler(endpointColumns, printEndpoints)
 	h.Handler(endpointColumns, printEndpointsList)
 	h.Handler(nodeColumns, printNode)
@@ -591,7 +597,7 @@ func printPodBase(pod *api.Pod, w io.Writer, options PrintOptions) error {
 	for i := len(pod.Status.ContainerStatuses) - 1; i >= 0; i-- {
 		container := pod.Status.ContainerStatuses[i]
 
-		restarts += container.RestartCount
+		restarts += int(container.RestartCount)
 		if container.State.Waiting != nil && container.State.Waiting.Reason != "" {
 			reason = container.State.Waiting.Reason
 		} else if container.State.Terminated != nil && container.State.Terminated.Reason != "" {
@@ -628,7 +634,12 @@ func printPodBase(pod *api.Pod, w io.Writer, options PrintOptions) error {
 
 	if options.Wide {
 		nodeName := pod.Spec.NodeName
-		if _, err := fmt.Fprintf(w, "\t%s",
+		podIP := pod.Status.PodIP
+		if podIP == "" {
+			podIP = "<none>"
+		}
+		if _, err := fmt.Fprintf(w, "\t%s\t%s",
+			podIP,
 			nodeName,
 		); err != nil {
 			return err
@@ -791,7 +802,7 @@ func printReplicaSetList(list *extensions.ReplicaSetList, w io.Writer, options P
 	return nil
 }
 
-func printJob(job *extensions.Job, w io.Writer, options PrintOptions) error {
+func printJob(job *batch.Job, w io.Writer, options PrintOptions) error {
 	name := job.Name
 	namespace := job.Namespace
 	containers := job.Spec.Template.Spec.Containers
@@ -844,7 +855,7 @@ func printJob(job *extensions.Job, w io.Writer, options PrintOptions) error {
 	return nil
 }
 
-func printJobList(list *extensions.JobList, w io.Writer, options PrintOptions) error {
+func printJobList(list *batch.JobList, w io.Writer, options PrintOptions) error {
 	for _, job := range list.Items {
 		if err := printJob(&job, w, options); err != nil {
 			return err
@@ -876,16 +887,19 @@ func getServiceExternalIP(svc *api.Service) string {
 		if len(svc.Spec.ExternalIPs) > 0 {
 			return strings.Join(svc.Spec.ExternalIPs, ",")
 		}
-		return "nodes"
+		return "<nodes>"
 	case api.ServiceTypeLoadBalancer:
 		lbIps := loadBalancerStatusStringer(svc.Status.LoadBalancer)
 		if len(svc.Spec.ExternalIPs) > 0 {
 			result := append(strings.Split(lbIps, ","), svc.Spec.ExternalIPs...)
 			return strings.Join(result, ",")
 		}
-		return lbIps
+		if len(lbIps) > 0 {
+			return lbIps
+		}
+		return "<pending>"
 	}
-	return "unknown"
+	return "<unknown>"
 }
 
 func makePortString(ports []api.ServicePort) string {
@@ -1009,6 +1023,53 @@ func printIngress(ingress *extensions.Ingress, w io.Writer, options PrintOptions
 func printIngressList(ingressList *extensions.IngressList, w io.Writer, options PrintOptions) error {
 	for _, ingress := range ingressList.Items {
 		if err := printIngress(&ingress, w, options); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func printPetSet(ps *apps.PetSet, w io.Writer, options PrintOptions) error {
+	name := ps.Name
+	namespace := ps.Namespace
+	containers := ps.Spec.Template.Spec.Containers
+
+	if options.WithNamespace {
+		if _, err := fmt.Fprintf(w, "%s\t", namespace); err != nil {
+			return err
+		}
+	}
+	desiredReplicas := ps.Spec.Replicas
+	currentReplicas := ps.Status.Replicas
+	if _, err := fmt.Fprintf(w, "%s\t%d\t%d\t%s",
+		name,
+		desiredReplicas,
+		currentReplicas,
+		translateTimestamp(ps.CreationTimestamp),
+	); err != nil {
+		return err
+	}
+	if options.Wide {
+		if err := layoutContainers(containers, w); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "\t%s", unversioned.FormatLabelSelector(ps.Spec.Selector)); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprint(w, appendLabels(ps.Labels, options.ColumnLabels)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprint(w, appendAllLabels(options.ShowLabels, ps.Labels)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func printPetSetList(petSetList *apps.PetSetList, w io.Writer, options PrintOptions) error {
+	for _, ps := range petSetList.Items {
+		if err := printPetSet(&ps, w, options); err != nil {
 			return err
 		}
 	}
@@ -1552,16 +1613,15 @@ func printDeploymentList(list *extensions.DeploymentList, w io.Writer, options P
 	return nil
 }
 
-func printHorizontalPodAutoscaler(hpa *extensions.HorizontalPodAutoscaler, w io.Writer, options PrintOptions) error {
+func printHorizontalPodAutoscaler(hpa *autoscaling.HorizontalPodAutoscaler, w io.Writer, options PrintOptions) error {
 	namespace := hpa.Namespace
 	name := hpa.Name
-	reference := fmt.Sprintf("%s/%s/%s",
-		hpa.Spec.ScaleRef.Kind,
-		hpa.Spec.ScaleRef.Name,
-		hpa.Spec.ScaleRef.Subresource)
+	reference := fmt.Sprintf("%s/%s",
+		hpa.Spec.ScaleTargetRef.Kind,
+		hpa.Spec.ScaleTargetRef.Name)
 	target := "<unset>"
-	if hpa.Spec.CPUUtilization != nil {
-		target = fmt.Sprintf("%d%%", hpa.Spec.CPUUtilization.TargetPercentage)
+	if hpa.Spec.TargetCPUUtilizationPercentage != nil {
+		target = fmt.Sprintf("%d%%", *hpa.Spec.TargetCPUUtilizationPercentage)
 	}
 	current := "<waiting>"
 	if hpa.Status.CurrentCPUUtilizationPercentage != nil {
@@ -1596,7 +1656,7 @@ func printHorizontalPodAutoscaler(hpa *extensions.HorizontalPodAutoscaler, w io.
 	return err
 }
 
-func printHorizontalPodAutoscalerList(list *extensions.HorizontalPodAutoscalerList, w io.Writer, options PrintOptions) error {
+func printHorizontalPodAutoscalerList(list *autoscaling.HorizontalPodAutoscalerList, w io.Writer, options PrintOptions) error {
 	for i := range list.Items {
 		if err := printHorizontalPodAutoscaler(&list.Items[i], w, options); err != nil {
 			return err
@@ -1634,9 +1694,9 @@ func printConfigMapList(list *api.ConfigMapList, w io.Writer, options PrintOptio
 }
 
 func printPodSecurityPolicy(item *extensions.PodSecurityPolicy, w io.Writer, options PrintOptions) error {
-	_, err := fmt.Fprintf(w, "%s\t%t\t%v\t%v\t%s\t%s\n", item.Name, item.Spec.Privileged,
-		item.Spec.Capabilities, item.Spec.Volumes, item.Spec.SELinux.Rule,
-		item.Spec.RunAsUser.Rule)
+	_, err := fmt.Fprintf(w, "%s\t%t\t%v\t%s\t%s\t%s\t%s\t%t\t%v\n", item.Name, item.Spec.Privileged,
+		item.Spec.AllowedCapabilities, item.Spec.SELinux.Rule,
+		item.Spec.RunAsUser.Rule, item.Spec.FSGroup.Rule, item.Spec.SupplementalGroups.Rule, item.Spec.ReadOnlyRootFilesystem, item.Spec.Volumes)
 	return err
 }
 
@@ -1684,10 +1744,7 @@ func appendAllLabels(showLabels bool, itemLabels map[string]string) string {
 func appendLabelTabs(columnLabels []string) string {
 	var buffer bytes.Buffer
 
-	for i := range columnLabels {
-		// NB: This odd dance is to make the loop both compatible with go 1.3 and
-		// pass `gofmt -s`
-		_ = i
+	for range columnLabels {
 		buffer.WriteString("\t")
 	}
 	buffer.WriteString("\n")
@@ -1728,12 +1785,12 @@ func formatLabelHeaders(columnLabels []string) []string {
 func formatWideHeaders(wide bool, t reflect.Type) []string {
 	if wide {
 		if t.String() == "*api.Pod" || t.String() == "*api.PodList" {
-			return []string{"NODE"}
+			return []string{"IP", "NODE"}
 		}
 		if t.String() == "*api.ReplicationController" || t.String() == "*api.ReplicationControllerList" {
 			return []string{"CONTAINER(S)", "IMAGE(S)", "SELECTOR"}
 		}
-		if t.String() == "*extensions.Job" || t.String() == "*extensions.JobList" {
+		if t.String() == "*batch.Job" || t.String() == "*batch.JobList" {
 			return []string{"CONTAINER(S)", "IMAGE(S)", "SELECTOR"}
 		}
 		if t.String() == "*api.Service" || t.String() == "*api.ServiceList" {

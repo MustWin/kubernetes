@@ -40,8 +40,7 @@ import (
 
 func TestClient(t *testing.T) {
 	_, s := framework.RunAMaster(t)
-	// TODO: Uncomment when fix #19254
-	// defer s.Close()
+	defer s.Close()
 
 	ns := api.NamespaceDefault
 	framework.DeleteAllEtcdKeys()
@@ -111,8 +110,7 @@ func TestClient(t *testing.T) {
 
 func TestSingleWatch(t *testing.T) {
 	_, s := framework.RunAMaster(t)
-	// TODO: Uncomment when fix #19254
-	// defer s.Close()
+	defer s.Close()
 
 	ns := "blargh"
 	deleteAllEtcdKeys()
@@ -197,8 +195,7 @@ func TestMultiWatch(t *testing.T) {
 	framework.DeleteAllEtcdKeys()
 	defer framework.DeleteAllEtcdKeys()
 	_, s := framework.RunAMaster(t)
-	// TODO: Uncomment when fix #19254
-	// defer s.Close()
+	defer s.Close()
 
 	ns := api.NamespaceDefault
 	client := client.NewOrDie(&restclient.Config{Host: s.URL, ContentConfig: restclient.ContentConfig{GroupVersion: testapi.Default.GroupVersion()}})
@@ -238,7 +235,7 @@ func TestMultiWatch(t *testing.T) {
 			Spec: api.PodSpec{
 				Containers: []api.Container{{
 					Name:  "nothing",
-					Image: "kubernetes/pause",
+					Image: "gcr.io/google_containers/pause-amd64:3.0",
 				}},
 			},
 		})
@@ -344,7 +341,7 @@ func TestMultiWatch(t *testing.T) {
 						Spec: api.PodSpec{
 							Containers: []api.Container{{
 								Name:  "nothing",
-								Image: "kubernetes/pause",
+								Image: "gcr.io/google_containers/pause-amd64:3.0",
 							}},
 						},
 					})
@@ -375,7 +372,7 @@ func TestMultiWatch(t *testing.T) {
 			if err != nil {
 				panic(fmt.Sprintf("Couldn't get %v: %v", name, err))
 			}
-			pod.Spec.Containers[0].Image = "kubernetes/pause:1"
+			pod.Spec.Containers[0].Image = "gcr.io/google_containers/pause-amd64:3.0"
 			sentTimes <- timePair{time.Now(), name}
 			if _, err := client.Pods(ns).Update(pod); err != nil {
 				panic(fmt.Sprintf("Couldn't make %v: %v", name, err))

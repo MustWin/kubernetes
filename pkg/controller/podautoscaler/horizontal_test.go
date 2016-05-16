@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,18 +29,18 @@ import (
 	"k8s.io/kubernetes/pkg/api/resource"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	_ "k8s.io/kubernetes/pkg/apimachinery/registered"
+	"k8s.io/kubernetes/pkg/apis/autoscaling"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
 	unversionedcore "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/unversioned"
 	"k8s.io/kubernetes/pkg/client/record"
 	"k8s.io/kubernetes/pkg/client/restclient"
 	"k8s.io/kubernetes/pkg/client/testing/core"
-	"k8s.io/kubernetes/pkg/client/unversioned/testclient"
 	"k8s.io/kubernetes/pkg/controller/podautoscaler/metrics"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/watch"
 
-	heapster "k8s.io/heapster/api/v1/types"
+	heapster "k8s.io/heapster/metrics/api/v1/types"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -66,13 +68,15 @@ type fakeResource struct {
 }
 
 type testCase struct {
-	minReplicas     int
-	maxReplicas     int
-	initialReplicas int
-	desiredReplicas int
+	sync.Mutex
+	minReplicas     int32
+	maxReplicas     int32
+	initialReplicas int32
+	desiredReplicas int32
+
 	// CPU target utilization as a percentage of the requested resources.
-	CPUTarget           int
-	CPUCurrent          int
+	CPUTarget           int32
+	CPUCurrent          int32
 	verifyCPUCurrent    bool
 	reportedLevels      []uint64
 	reportedCPURequests []resource.Quantity
@@ -88,6 +92,7 @@ type testCase struct {
 	resource *fakeResource
 }
 
+// Needs to be called under a lock.
 func (tc *testCase) computeCPUCurrent() {
 	if len(tc.reportedLevels) != len(tc.reportedCPURequests) || len(tc.reportedLevels) == 0 {
 		return
@@ -100,7 +105,7 @@ func (tc *testCase) computeCPUCurrent() {
 	for _, req := range tc.reportedCPURequests {
 		requested += int(req.MilliValue())
 	}
-	tc.CPUCurrent = 100 * reported / requested
+	tc.CPUCurrent = int32(100 * reported / requested)
 }
 
 func (tc *testCase) prepareTestClient(t *testing.T) *fake.Clientset {
@@ -110,6 +115,8 @@ func (tc *testCase) prepareTestClient(t *testing.T) *fake.Clientset {
 	selector := &unversioned.LabelSelector{
 		MatchLabels: map[string]string{"name": podNamePrefix},
 	}
+
+	tc.Lock()
 
 	tc.scaleUpdated = false
 	tc.statusUpdated = false
@@ -126,36 +133,40 @@ func (tc *testCase) prepareTestClient(t *testing.T) *fake.Clientset {
 			kind:       "replicationcontrollers",
 		}
 	}
+	tc.Unlock()
 
 	fakeClient := &fake.Clientset{}
 	fakeClient.AddReactor("list", "horizontalpodautoscalers", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		obj := &extensions.HorizontalPodAutoscalerList{
-			Items: []extensions.HorizontalPodAutoscaler{
+		tc.Lock()
+		defer tc.Unlock()
+
+		obj := &autoscaling.HorizontalPodAutoscalerList{
+			Items: []autoscaling.HorizontalPodAutoscaler{
 				{
 					ObjectMeta: api.ObjectMeta{
 						Name:      hpaName,
 						Namespace: namespace,
 						SelfLink:  "experimental/v1/namespaces/" + namespace + "/horizontalpodautoscalers/" + hpaName,
 					},
-					Spec: extensions.HorizontalPodAutoscalerSpec{
-						ScaleRef: extensions.SubresourceReference{
-							Kind:        tc.resource.kind,
-							Name:        tc.resource.name,
-							APIVersion:  tc.resource.apiVersion,
-							Subresource: "scale",
+					Spec: autoscaling.HorizontalPodAutoscalerSpec{
+						ScaleTargetRef: autoscaling.CrossVersionObjectReference{
+							Kind:       tc.resource.kind,
+							Name:       tc.resource.name,
+							APIVersion: tc.resource.apiVersion,
 						},
 						MinReplicas: &tc.minReplicas,
 						MaxReplicas: tc.maxReplicas,
 					},
-					Status: extensions.HorizontalPodAutoscalerStatus{
+					Status: autoscaling.HorizontalPodAutoscalerStatus{
 						CurrentReplicas: tc.initialReplicas,
 						DesiredReplicas: tc.initialReplicas,
 					},
 				},
 			},
 		}
+
 		if tc.CPUTarget > 0.0 {
-			obj.Items[0].Spec.CPUUtilization = &extensions.CPUTargetUtilization{TargetPercentage: tc.CPUTarget}
+			obj.Items[0].Spec.TargetCPUUtilizationPercentage = &tc.CPUTarget
 		}
 		if tc.cmTarget != nil {
 			b, err := json.Marshal(tc.cmTarget)
@@ -169,6 +180,9 @@ func (tc *testCase) prepareTestClient(t *testing.T) *fake.Clientset {
 	})
 
 	fakeClient.AddReactor("get", "replicationcontrollers", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		tc.Lock()
+		defer tc.Unlock()
+
 		obj := &extensions.Scale{
 			ObjectMeta: api.ObjectMeta{
 				Name:      tc.resource.name,
@@ -186,6 +200,9 @@ func (tc *testCase) prepareTestClient(t *testing.T) *fake.Clientset {
 	})
 
 	fakeClient.AddReactor("get", "deployments", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		tc.Lock()
+		defer tc.Unlock()
+
 		obj := &extensions.Scale{
 			ObjectMeta: api.ObjectMeta{
 				Name:      tc.resource.name,
@@ -203,6 +220,9 @@ func (tc *testCase) prepareTestClient(t *testing.T) *fake.Clientset {
 	})
 
 	fakeClient.AddReactor("get", "replicasets", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		tc.Lock()
+		defer tc.Unlock()
+
 		obj := &extensions.Scale{
 			ObjectMeta: api.ObjectMeta{
 				Name:      tc.resource.name,
@@ -220,6 +240,9 @@ func (tc *testCase) prepareTestClient(t *testing.T) *fake.Clientset {
 	})
 
 	fakeClient.AddReactor("list", "pods", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		tc.Lock()
+		defer tc.Unlock()
+
 		obj := &api.PodList{}
 		for i := 0; i < len(tc.reportedCPURequests); i++ {
 			podName := fmt.Sprintf("%s-%d", podNamePrefix, i)
@@ -252,6 +275,9 @@ func (tc *testCase) prepareTestClient(t *testing.T) *fake.Clientset {
 	})
 
 	fakeClient.AddProxyReactor("services", func(action core.Action) (handled bool, ret restclient.ResponseWrapper, err error) {
+		tc.Lock()
+		defer tc.Unlock()
+
 		timestamp := time.Now()
 		metrics := heapster.MetricResultList{}
 		for _, level := range tc.reportedLevels {
@@ -266,31 +292,43 @@ func (tc *testCase) prepareTestClient(t *testing.T) *fake.Clientset {
 	})
 
 	fakeClient.AddReactor("update", "replicationcontrollers", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		obj := action.(testclient.UpdateAction).GetObject().(*extensions.Scale)
-		replicas := action.(testclient.UpdateAction).GetObject().(*extensions.Scale).Spec.Replicas
+		tc.Lock()
+		defer tc.Unlock()
+
+		obj := action.(core.UpdateAction).GetObject().(*extensions.Scale)
+		replicas := action.(core.UpdateAction).GetObject().(*extensions.Scale).Spec.Replicas
 		assert.Equal(t, tc.desiredReplicas, replicas)
 		tc.scaleUpdated = true
 		return true, obj, nil
 	})
 
 	fakeClient.AddReactor("update", "deployments", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		obj := action.(testclient.UpdateAction).GetObject().(*extensions.Scale)
-		replicas := action.(testclient.UpdateAction).GetObject().(*extensions.Scale).Spec.Replicas
+		tc.Lock()
+		defer tc.Unlock()
+
+		obj := action.(core.UpdateAction).GetObject().(*extensions.Scale)
+		replicas := action.(core.UpdateAction).GetObject().(*extensions.Scale).Spec.Replicas
 		assert.Equal(t, tc.desiredReplicas, replicas)
 		tc.scaleUpdated = true
 		return true, obj, nil
 	})
 
 	fakeClient.AddReactor("update", "replicasets", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		obj := action.(testclient.UpdateAction).GetObject().(*extensions.Scale)
-		replicas := action.(testclient.UpdateAction).GetObject().(*extensions.Scale).Spec.Replicas
+		tc.Lock()
+		defer tc.Unlock()
+
+		obj := action.(core.UpdateAction).GetObject().(*extensions.Scale)
+		replicas := action.(core.UpdateAction).GetObject().(*extensions.Scale).Spec.Replicas
 		assert.Equal(t, tc.desiredReplicas, replicas)
 		tc.scaleUpdated = true
 		return true, obj, nil
 	})
 
 	fakeClient.AddReactor("update", "horizontalpodautoscalers", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		obj := action.(testclient.UpdateAction).GetObject().(*extensions.HorizontalPodAutoscaler)
+		tc.Lock()
+		defer tc.Unlock()
+
+		obj := action.(core.UpdateAction).GetObject().(*autoscaling.HorizontalPodAutoscaler)
 		assert.Equal(t, namespace, obj.Namespace)
 		assert.Equal(t, hpaName, obj.Name)
 		assert.Equal(t, tc.desiredReplicas, obj.Status.DesiredReplicas)
@@ -305,7 +343,10 @@ func (tc *testCase) prepareTestClient(t *testing.T) *fake.Clientset {
 	})
 
 	fakeClient.AddReactor("*", "events", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		obj := action.(testclient.CreateAction).GetObject().(*api.Event)
+		tc.Lock()
+		defer tc.Unlock()
+
+		obj := action.(core.CreateAction).GetObject().(*api.Event)
 		if tc.verifyEvents {
 			assert.Equal(t, "SuccessfulRescale", obj.Reason)
 			assert.Equal(t, fmt.Sprintf("New size: %d; reason: CPU utilization above target", tc.desiredReplicas), obj.Message)
@@ -321,6 +362,9 @@ func (tc *testCase) prepareTestClient(t *testing.T) *fake.Clientset {
 }
 
 func (tc *testCase) verifyResults(t *testing.T) {
+	tc.Lock()
+	defer tc.Unlock()
+
 	assert.Equal(t, tc.initialReplicas != tc.desiredReplicas, tc.scaleUpdated)
 	assert.True(t, tc.statusUpdated)
 	if tc.verifyEvents {
@@ -340,7 +384,7 @@ func (tc *testCase) runTest(t *testing.T) {
 		metricsClient:   metricsClient,
 		eventRecorder:   recorder,
 		scaleNamespacer: testClient.Extensions(),
-		hpaNamespacer:   testClient.Extensions(),
+		hpaNamespacer:   testClient.Autoscaling(),
 	}
 
 	store, frameworkController := newInformer(hpaController, time.Minute)
@@ -351,9 +395,13 @@ func (tc *testCase) runTest(t *testing.T) {
 	defer close(stop)
 	go hpaController.Run(stop)
 
+	tc.Lock()
 	if tc.verifyEvents {
+		tc.Unlock()
 		// We need to wait for events to be broadcasted (sleep for longer than record.sleepDuration).
 		time.Sleep(2 * time.Second)
+	} else {
+		tc.Unlock()
 	}
 	// Wait for HPA to be processed.
 	<-tc.processed
@@ -696,6 +744,74 @@ func TestEventNotCreated(t *testing.T) {
 		reportedCPURequests: []resource.Quantity{resource.MustParse("0.4"), resource.MustParse("0.4")},
 		verifyEvents:        true,
 	}
+	tc.runTest(t)
+}
+
+// TestComputedToleranceAlgImplementation is a regression test which
+// back-calculates a minimal percentage for downscaling based on a small percentage
+// increase in pod utilization which is calibrated against the tolerance value.
+func TestComputedToleranceAlgImplementation(t *testing.T) {
+
+	startPods := int32(10)
+	// 150 mCPU per pod.
+	totalUsedCPUOfAllPods := uint64(startPods * 150)
+	// Each pod starts out asking for 2X what is really needed.
+	// This means we will have a 50% ratio of used/requested
+	totalRequestedCPUOfAllPods := int32(2 * totalUsedCPUOfAllPods)
+	requestedToUsed := float64(totalRequestedCPUOfAllPods / int32(totalUsedCPUOfAllPods))
+	// Spread the amount we ask over 10 pods.  We can add some jitter later in reportedLevels.
+	perPodRequested := totalRequestedCPUOfAllPods / startPods
+
+	// Force a minimal scaling event by satisfying  (tolerance < 1 - resourcesUsedRatio).
+	target := math.Abs(1/(requestedToUsed*(1-tolerance))) + .01
+	finalCpuPercentTarget := int32(target * 100)
+	resourcesUsedRatio := float64(totalUsedCPUOfAllPods) / float64(float64(totalRequestedCPUOfAllPods)*target)
+
+	// i.e. .60 * 20 -> scaled down expectation.
+	finalPods := int32(math.Ceil(resourcesUsedRatio * float64(startPods)))
+
+	// To breach tolerance we will create a utilization ratio difference of tolerance to usageRatioToleranceValue)
+	tc := testCase{
+		minReplicas:     0,
+		maxReplicas:     1000,
+		initialReplicas: startPods,
+		desiredReplicas: finalPods,
+		CPUTarget:       finalCpuPercentTarget,
+		reportedLevels: []uint64{
+			totalUsedCPUOfAllPods / 10,
+			totalUsedCPUOfAllPods / 10,
+			totalUsedCPUOfAllPods / 10,
+			totalUsedCPUOfAllPods / 10,
+			totalUsedCPUOfAllPods / 10,
+			totalUsedCPUOfAllPods / 10,
+			totalUsedCPUOfAllPods / 10,
+			totalUsedCPUOfAllPods / 10,
+			totalUsedCPUOfAllPods / 10,
+			totalUsedCPUOfAllPods / 10,
+		},
+		reportedCPURequests: []resource.Quantity{
+			resource.MustParse(fmt.Sprint(perPodRequested+100) + "m"),
+			resource.MustParse(fmt.Sprint(perPodRequested-100) + "m"),
+			resource.MustParse(fmt.Sprint(perPodRequested+10) + "m"),
+			resource.MustParse(fmt.Sprint(perPodRequested-10) + "m"),
+			resource.MustParse(fmt.Sprint(perPodRequested+2) + "m"),
+			resource.MustParse(fmt.Sprint(perPodRequested-2) + "m"),
+			resource.MustParse(fmt.Sprint(perPodRequested+1) + "m"),
+			resource.MustParse(fmt.Sprint(perPodRequested-1) + "m"),
+			resource.MustParse(fmt.Sprint(perPodRequested) + "m"),
+			resource.MustParse(fmt.Sprint(perPodRequested) + "m"),
+		},
+	}
+
+	tc.runTest(t)
+
+	// Reuse the data structure above, now testing "unscaling".
+	// Now, we test that no scaling happens if we are in a very close margin to the tolerance
+	target = math.Abs(1/(requestedToUsed*(1-tolerance))) + .004
+	finalCpuPercentTarget = int32(target * 100)
+	tc.CPUTarget = finalCpuPercentTarget
+	tc.initialReplicas = startPods
+	tc.desiredReplicas = startPods
 	tc.runTest(t)
 }
 

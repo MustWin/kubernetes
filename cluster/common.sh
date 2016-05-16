@@ -202,6 +202,16 @@ function gen-kube-bearertoken() {
     KUBE_BEARER_TOKEN=$(dd if=/dev/urandom bs=128 count=1 2>/dev/null | base64 | tr -d "=+/" | dd bs=32 count=1 2>/dev/null)
 }
 
+# Generate uid
+# This function only works on systems with python. It generates a time based
+# UID instead of a UUID because GCE has a name length limit.
+#
+# Vars set:
+#   KUBE_UID
+function gen-uid {
+    KUBE_UID=$(python -c 'import uuid; print(uuid.uuid1().fields[0])')
+}
+
 
 function load-or-gen-kube-basicauth() {
   if [[ ! -z "${KUBE_CONTEXT:-}" ]]; then
@@ -335,9 +345,9 @@ function find-release-tars() {
     exit 1
   fi
 
-  # This tarball is only used by Ubuntu Trusty.
+  # This tarball is used by GCI, Ubuntu Trusty, and CoreOS.
   KUBE_MANIFESTS_TAR=
-  if [[ "${KUBE_OS_DISTRIBUTION:-}" == "trusty" || "${KUBE_OS_DISTRIBUTION:-}" == "coreos" ]]; then
+  if [[ "${KUBE_OS_DISTRIBUTION:-}" == "trusty" || "${KUBE_OS_DISTRIBUTION:-}" == "gci" || "${KUBE_OS_DISTRIBUTION:-}" == "coreos" ]]; then
     KUBE_MANIFESTS_TAR="${KUBE_ROOT}/server/kubernetes-manifests.tar.gz"
     if [[ ! -f "${KUBE_MANIFESTS_TAR}" ]]; then
       KUBE_MANIFESTS_TAR="${KUBE_ROOT}/_output/release-tars/kubernetes-manifests.tar.gz"
@@ -456,6 +466,7 @@ function build-kube-env {
   local file=$2
 
   build-runtime-config
+  gen-uid
 
   rm -f ${file}
   cat >$file <<EOF
@@ -503,6 +514,7 @@ KUBE_DOCKER_REGISTRY: $(yaml-quote ${KUBE_DOCKER_REGISTRY:-})
 KUBE_ADDON_REGISTRY: $(yaml-quote ${KUBE_ADDON_REGISTRY:-})
 MULTIZONE: $(yaml-quote ${MULTIZONE:-})
 NON_MASQUERADE_CIDR: $(yaml-quote ${NON_MASQUERADE_CIDR:-})
+KUBE_UID: $(yaml-quote ${KUBE_UID:-})
 EOF
   if [ -n "${KUBELET_PORT:-}" ]; then
     cat >>$file <<EOF
@@ -519,7 +531,7 @@ EOF
 TERMINATED_POD_GC_THRESHOLD: $(yaml-quote ${TERMINATED_POD_GC_THRESHOLD})
 EOF
   fi
-  if [[ "${OS_DISTRIBUTION}" == "trusty" ]]; then
+  if [[ "${OS_DISTRIBUTION}" == "trusty" || "${OS_DISTRIBUTION}" == "gci" ]]; then
     cat >>$file <<EOF
 KUBE_MANIFESTS_TAR_URL: $(yaml-quote ${KUBE_MANIFESTS_TAR_URL})
 KUBE_MANIFESTS_TAR_HASH: $(yaml-quote ${KUBE_MANIFESTS_TAR_HASH})
@@ -629,6 +641,12 @@ KUBERNETES_CONTAINER_RUNTIME: $(yaml-quote ${CONTAINER_RUNTIME:-docker})
 RKT_VERSION: $(yaml-quote ${RKT_VERSION:-})
 RKT_PATH: $(yaml-quote ${RKT_PATH:-})
 KUBERNETES_CONFIGURE_CBR0: $(yaml-quote ${KUBERNETES_CONFIGURE_CBR0:-true})
+EOF
+  fi
+  if [[ "${ENABLE_NODE_AUTOSCALER}" == "true" ]]; then
+      cat >>$file <<EOF
+ENABLE_NODE_AUTOSCALER: $(yaml-quote ${ENABLE_NODE_AUTOSCALER})
+AUTOSCALER_MIG_CONFIG: $(yaml-quote ${AUTOSCALER_MIG_CONFIG})
 EOF
   fi
 }

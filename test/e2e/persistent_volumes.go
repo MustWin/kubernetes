@@ -29,9 +29,21 @@ import (
 	"k8s.io/kubernetes/test/e2e/framework"
 )
 
-// This test needs privileged containers, which are disabled by default.  Run
-// the test with "go run hack/e2e.go ... --ginkgo.focus=[Feature:Volumes]"
-var _ = framework.KubeDescribe("PersistentVolumes [Feature:Volumes]", func() {
+// Clean both server and client pods.
+func persistentVolumeTestCleanup(client *client.Client, config VolumeTestConfig) {
+	defer GinkgoRecover()
+
+	podClient := client.Pods(config.namespace)
+
+	if config.serverImage != "" {
+		err := podClient.Delete(config.prefix+"-server", nil)
+		if err != nil {
+			framework.ExpectNoError(err, "Failed to delete server pod: %v", err)
+		}
+	}
+}
+
+var _ = framework.KubeDescribe("PersistentVolumes", func() {
 	f := framework.NewDefaultFramework("pv")
 	var c *client.Client
 	var ns string
@@ -41,16 +53,17 @@ var _ = framework.KubeDescribe("PersistentVolumes [Feature:Volumes]", func() {
 		ns = f.Namespace.Name
 	})
 
-	It("NFS volume can be created, bound, retrieved, unbound, and used by a pod", func() {
+	// Flaky issue: #25294
+	It("NFS volume can be created, bound, retrieved, unbound, and used by a pod [Flaky]", func() {
 		config := VolumeTestConfig{
 			namespace:   ns,
 			prefix:      "nfs",
-			serverImage: "gcr.io/google_containers/volume-nfs:0.4",
+			serverImage: "gcr.io/google_containers/volume-nfs:0.6",
 			serverPorts: []int{2049},
 		}
 
 		defer func() {
-			volumeTestCleanup(c, config)
+			persistentVolumeTestCleanup(c, config)
 		}()
 
 		pod := startVolumeServer(c, config)
@@ -96,6 +109,10 @@ var _ = framework.KubeDescribe("PersistentVolumes [Feature:Volumes]", func() {
 		checkpod, err := c.Pods(ns).Create(podTemplate)
 		framework.ExpectNoError(err, "Failed to create checker pod: %v", err)
 		err = framework.WaitForPodSuccessInNamespace(c, checkpod.Name, checkpod.Spec.Containers[0].Name, checkpod.Namespace)
+		Expect(err).NotTo(HaveOccurred())
+		// must delete PV, otherwise the PV is available and next time a PVC may bind to it and cause new PV fails to bind
+		framework.Logf("Deleting PersistentVolume")
+		err = c.PersistentVolumes().Delete(pv.Name)
 		Expect(err).NotTo(HaveOccurred())
 	})
 })

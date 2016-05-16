@@ -17,8 +17,6 @@ limitations under the License.
 package storage
 
 import (
-	"time"
-
 	"golang.org/x/net/context"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/storage/generic"
@@ -32,7 +30,7 @@ type Versioner interface {
 	// UpdateObject sets storage metadata into an API object. Returns an error if the object
 	// cannot be updated correctly. May return nil if the requested object does not need metadata
 	// from database.
-	UpdateObject(obj runtime.Object, expiration *time.Time, resourceVersion uint64) error
+	UpdateObject(obj runtime.Object, resourceVersion uint64) error
 	// UpdateList sets the resource version into an API list object. Returns an error if the object
 	// cannot be updated correctly. May return nil if the requested object does not need metadata
 	// from database.
@@ -50,9 +48,6 @@ type ResponseMeta struct {
 	// zero or negative in some cases (objects may be expired after the requested
 	// expiration time due to server lag).
 	TTL int64
-	// Expiration is the time at which the node that contained the returned object will expire and be deleted.
-	// This can be nil if there is no expiration time set for the node.
-	Expiration *time.Time
 	// The resource version of the node that contained the returned object.
 	ResourceVersion uint64
 }

@@ -23,36 +23,41 @@ import (
 	"reflect"
 	"strconv"
 	"testing"
+	"time"
 
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/util/wait"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm"
 	algorithmpredicates "k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
 	schedulerapi "k8s.io/kubernetes/plugin/pkg/scheduler/api"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/schedulercache"
-	schedulertesting "k8s.io/kubernetes/plugin/pkg/scheduler/testing"
 )
 
-func falsePredicate(pod *api.Pod, nodeName string, nodeInfo *schedulercache.NodeInfo) (bool, error) {
-	return false, algorithmpredicates.ErrFakePredicateError
+func falsePredicate(pod *api.Pod, nodeInfo *schedulercache.NodeInfo) (bool, error) {
+	return false, algorithmpredicates.ErrFakePredicate
 }
 
-func truePredicate(pod *api.Pod, nodeName string, nodeInfo *schedulercache.NodeInfo) (bool, error) {
+func truePredicate(pod *api.Pod, nodeInfo *schedulercache.NodeInfo) (bool, error) {
 	return true, nil
 }
 
-func matchesPredicate(pod *api.Pod, nodeName string, nodeInfo *schedulercache.NodeInfo) (bool, error) {
-	if pod.Name == nodeName {
+func matchesPredicate(pod *api.Pod, nodeInfo *schedulercache.NodeInfo) (bool, error) {
+	node := nodeInfo.Node()
+	if node == nil {
+		return false, fmt.Errorf("node not found")
+	}
+	if pod.Name == node.Name {
 		return true, nil
 	}
-	return false, algorithmpredicates.ErrFakePredicateError
+	return false, algorithmpredicates.ErrFakePredicate
 }
 
-func hasNoPodsPredicate(pod *api.Pod, nodeName string, nodeInfo *schedulercache.NodeInfo) (bool, error) {
+func hasNoPodsPredicate(pod *api.Pod, nodeInfo *schedulercache.NodeInfo) (bool, error) {
 	if len(nodeInfo.Pods()) == 0 {
 		return true, nil
 	}
-	return false, algorithmpredicates.ErrFakePredicateError
+	return false, algorithmpredicates.ErrFakePredicate
 }
 
 func numericPriority(pod *api.Pod, nodeNameToInfo map[string]*schedulercache.NodeInfo, nodeLister algorithm.NodeLister) (schedulerapi.HostPriorityList, error) {
@@ -192,7 +197,7 @@ func TestGenericScheduler(t *testing.T) {
 			nodes:        []string{"machine1", "machine2"},
 			expectsErr:   true,
 			name:         "test 1",
-			wErr:         algorithmpredicates.ErrFakePredicateError,
+			wErr:         algorithmpredicates.ErrFakePredicate,
 		},
 		{
 			predicates:    map[string]algorithm.FitPredicate{"true": truePredicate},
@@ -273,7 +278,14 @@ func TestGenericScheduler(t *testing.T) {
 	}
 	for _, test := range tests {
 		random := rand.New(rand.NewSource(0))
-		scheduler := NewGenericScheduler(schedulertesting.PodsToCache(test.pods), test.predicates, test.prioritizers, []algorithm.SchedulerExtender{}, random)
+		cache := schedulercache.New(time.Duration(0), wait.NeverStop)
+		for _, pod := range test.pods {
+			cache.AddPod(pod)
+		}
+		for _, name := range test.nodes {
+			cache.AddNode(&api.Node{ObjectMeta: api.ObjectMeta{Name: name}})
+		}
+		scheduler := NewGenericScheduler(cache, test.predicates, test.prioritizers, []algorithm.SchedulerExtender{}, random)
 		machine, err := scheduler.Schedule(test.pod, algorithm.FakeNodeLister(makeNodeList(test.nodes)))
 		if test.expectsErr {
 			if err == nil {
@@ -309,12 +321,12 @@ func TestFindFitAllError(t *testing.T) {
 	}
 
 	for _, node := range nodes {
-		failures, found := predicateMap[node]
+		failure, found := predicateMap[node]
 		if !found {
 			t.Errorf("failed to find node: %s in %v", node, predicateMap)
 		}
-		if len(failures) != 1 || !failures.Has("false") {
-			t.Errorf("unexpected failures: %v", failures)
+		if failure != "FakePredicateError" {
+			t.Errorf("unexpected failures: %v", failure)
 		}
 	}
 }
@@ -328,9 +340,12 @@ func TestFindFitSomeError(t *testing.T) {
 		"2": schedulercache.NewNodeInfo(),
 		"1": schedulercache.NewNodeInfo(pod),
 	}
+	for name := range nodeNameToInfo {
+		nodeNameToInfo[name].SetNode(&api.Node{ObjectMeta: api.ObjectMeta{Name: name}})
+	}
 
 	_, predicateMap, err := findNodesThatFit(pod, nodeNameToInfo, predicates, makeNodeList(nodes), nil)
-	if err != nil && !reflect.DeepEqual(err, algorithmpredicates.ErrFakePredicateError) {
+	if err != nil && !reflect.DeepEqual(err, algorithmpredicates.ErrFakePredicate) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
@@ -342,12 +357,12 @@ func TestFindFitSomeError(t *testing.T) {
 		if node == pod.Name {
 			continue
 		}
-		failures, found := predicateMap[node]
+		failure, found := predicateMap[node]
 		if !found {
 			t.Errorf("failed to find node: %s in %v", node, predicateMap)
 		}
-		if len(failures) != 1 || !failures.Has("false") {
-			t.Errorf("unexpected failures: %v", failures)
+		if failure != "FakePredicateError" {
+			t.Errorf("unexpected failures: %v", failure)
 		}
 	}
 }

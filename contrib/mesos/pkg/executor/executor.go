@@ -28,7 +28,7 @@ import (
 
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 
-	"github.com/fsouza/go-dockerclient"
+	dockertypes "github.com/docker/engine-api/types"
 	"github.com/gogo/protobuf/proto"
 	log "github.com/golang/glog"
 	bindings "github.com/mesos/mesos-go/executor"
@@ -150,8 +150,10 @@ func New(config Config) *Executor {
 		nodeInfos:         config.NodeInfos,
 		initCompleted:     make(chan struct{}),
 		registry:          config.Registry,
-		kubeAPI:           &clientAPIWrapper{config.APIClient},
-		nodeAPI:           &clientAPIWrapper{config.APIClient},
+	}
+	if config.APIClient != nil {
+		k.kubeAPI = &clientAPIWrapper{config.APIClient.Core()}
+		k.nodeAPI = &clientAPIWrapper{config.APIClient.Core()}
 	}
 
 	// apply functional options
@@ -655,14 +657,13 @@ func (k *Executor) doShutdown(driver bindings.ExecutorDriver) {
 // Destroy existing k8s containers
 func (k *Executor) killKubeletContainers() {
 	if containers, err := dockertools.GetKubeletDockerContainers(k.dockerClient, true); err == nil {
-		opts := docker.RemoveContainerOptions{
+		opts := dockertypes.ContainerRemoveOptions{
 			RemoveVolumes: true,
 			Force:         true,
 		}
 		for _, container := range containers {
-			opts.ID = container.ID
-			log.V(2).Infof("Removing container: %v", opts.ID)
-			if err := k.dockerClient.RemoveContainer(opts); err != nil {
+			log.V(2).Infof("Removing container: %v", container.ID)
+			if err := k.dockerClient.RemoveContainer(container.ID, opts); err != nil {
 				log.Warning(err)
 			}
 		}

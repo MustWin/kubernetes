@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	gruntime "runtime"
 	"strings"
 
@@ -146,7 +146,13 @@ func RunEdit(f *cmdutil.Factory, out, errOut io.Writer, cmd *cobra.Command, args
 		ObjectTyper:  typer,
 		RESTMapper:   mapper,
 		ClientMapper: resource.ClientMapperFunc(f.ClientForMapping),
-		Decoder:      f.Decoder(true),
+
+		// NB: we use `f.Decoder(false)` to get a plain deserializer for
+		// the resourceMapper, since it's used to read in edits and
+		// we don't want to convert into the internal version when
+		// reading in edits (this would cause us to potentially try to
+		// compare two different GroupVersions).
+		Decoder: f.Decoder(false),
 	}
 
 	r := resource.NewBuilder(mapper, typer, resource.ClientMapperFunc(f.ClientForMapping), f.Decoder(true)).
@@ -176,7 +182,7 @@ func RunEdit(f *cmdutil.Factory, out, errOut io.Writer, cmd *cobra.Command, args
 	if err != nil {
 		return err
 	}
-	objs, err := resource.AsVersionedObjects(infos, defaultVersion.String(), encoder)
+	objs, err := resource.AsVersionedObjects(infos, defaultVersion, encoder)
 	if err != nil {
 		return err
 	}
@@ -221,7 +227,7 @@ outter:
 
 			// launch the editor
 			editedDiff := edited
-			edited, file, err = edit.LaunchTempFile(fmt.Sprintf("%s-edit-", path.Base(os.Args[0])), ext, buf)
+			edited, file, err = edit.LaunchTempFile(fmt.Sprintf("%s-edit-", filepath.Base(os.Args[0])), ext, buf)
 			if err != nil {
 				return preservedFile(err, results.file, errOut)
 			}
@@ -344,7 +350,7 @@ outter:
 			// 3. invalid: retry those on the spot by looping ie. reloading the editor
 			if results.retryable > 0 {
 				fmt.Fprintln(errOut, errorMsg)
-				fmt.Fprintf(errOut, "You can run `%s replace -f %s` to try this update again.\n", path.Base(os.Args[0]), file)
+				fmt.Fprintf(errOut, "You can run `%s replace -f %s` to try this update again.\n", filepath.Base(os.Args[0]), file)
 				continue outter
 			}
 			if results.notfound > 0 {

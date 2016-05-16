@@ -29,6 +29,25 @@ Documentation for other releases can be found at
 
 # Testing guide
 
+Updated: 5/3/2016
+
+**Table of Contents**
+<!-- BEGIN MUNGE: GENERATED_TOC -->
+
+- [Testing guide](#testing-guide)
+  - [Unit tests](#unit-tests)
+    - [Run all unit tests](#run-all-unit-tests)
+    - [Run some unit tests](#run-some-unit-tests)
+    - [Stress running unit tests](#stress-running-unit-tests)
+    - [Unit test coverage](#unit-test-coverage)
+    - [Benchmark unit tests](#benchmark-unit-tests)
+  - [Integration tests](#integration-tests)
+    - [Install etcd dependency](#install-etcd-dependency)
+    - [Run integration tests](#run-integration-tests)
+  - [End-to-End tests](#end-to-end-tests)
+
+<!-- END MUNGE: GENERATED_TOC -->
+
 This assumes you already read the [development guide](development.md) to
 install go, godeps, and configure your git client.
 
@@ -65,10 +84,10 @@ hack/test-go.sh  # Run all unit tests.
 cd kubernetes
 
 # Run all tests under pkg (requires client to be in $GOPATH/src/k8s.io)
-godep go test ./pkg/...
+go test ./pkg/...
 
 # Run all tests in the pkg/api (but not subpackages)
-godep go test ./pkg/api
+go test ./pkg/api
 ```
 
 ### Stress running unit tests
@@ -116,7 +135,7 @@ To run benchmark tests, you'll typically use something like:
 
 ```sh
 cd kubernetes
-godep go test ./pkg/apiserver -benchmem -run=XXX -bench=BenchmarkWatch
+go test ./pkg/apiserver -benchmem -run=XXX -bench=BenchmarkWatch
 ```
 
 This will do the following:
@@ -141,7 +160,7 @@ is [table driven testing](https://github.com/golang/go/wiki/TableDrivenTests)
   - Example: [TestNamespaceAuthorization](../../test/integration/auth_test.go)
 * Integration tests must run in parallel
   - Each test should create its own master, httpserver and config.
-  - Example: [TestPodUpdateActiveDeadlineSeconds](../../test/integration/pods.go)
+  - Example: [TestPodUpdateActiveDeadlineSeconds](../../test/integration/pods_test.go)
 * See [coding conventions](coding-conventions.md).
 
 ### Install etcd dependency

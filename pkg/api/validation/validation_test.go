@@ -98,6 +98,56 @@ func TestValidateObjectMetaNamespaces(t *testing.T) {
 	}
 }
 
+func TestValidateObjectMetaOwnerReferences(t *testing.T) {
+	testCases := []struct {
+		ownerReferences []api.OwnerReference
+		expectError     bool
+	}{
+		{
+			[]api.OwnerReference{
+				{
+					APIVersion: "thirdpartyVersion",
+					Kind:       "thirdpartyKind",
+					Name:       "name",
+					UID:        "1",
+				},
+			},
+			false,
+		},
+		{
+			// event shouldn't be set as an owner
+			[]api.OwnerReference{
+				{
+					APIVersion: "v1",
+					Kind:       "Event",
+					Name:       "name",
+					UID:        "1",
+				},
+			},
+			true,
+		},
+	}
+
+	for _, tc := range testCases {
+		errs := ValidateObjectMeta(
+			&api.ObjectMeta{Name: "test", Namespace: "test", OwnerReferences: tc.ownerReferences},
+			true,
+			func(s string, prefix bool) (bool, string) {
+				return true, ""
+			},
+			field.NewPath("field"))
+		if len(errs) != 0 && !tc.expectError {
+			t.Errorf("unexpected error: %v", errs)
+		}
+		if len(errs) == 0 && tc.expectError {
+			t.Errorf("expect error")
+		}
+		if len(errs) != 0 && !strings.Contains(errs[0].Error(), "is disallowed from being an owner") {
+			t.Errorf("unexpected error message: %v", errs)
+		}
+	}
+}
+
 func TestValidateObjectMetaUpdateIgnoresCreationTimestamp(t *testing.T) {
 	if errs := ValidateObjectMetaUpdate(
 		&api.ObjectMeta{Name: "test", ResourceVersion: "1"},
@@ -122,6 +172,89 @@ func TestValidateObjectMetaUpdateIgnoresCreationTimestamp(t *testing.T) {
 	}
 }
 
+func TestValidateObjectMetaUpdatePreventsDeletionFieldMutation(t *testing.T) {
+	now := unversioned.NewTime(time.Unix(1000, 0).UTC())
+	later := unversioned.NewTime(time.Unix(2000, 0).UTC())
+	gracePeriodShort := int64(30)
+	gracePeriodLong := int64(40)
+
+	testcases := map[string]struct {
+		Old          api.ObjectMeta
+		New          api.ObjectMeta
+		ExpectedNew  api.ObjectMeta
+		ExpectedErrs []string
+	}{
+		"valid without deletion fields": {
+			Old:          api.ObjectMeta{Name: "test", ResourceVersion: "1"},
+			New:          api.ObjectMeta{Name: "test", ResourceVersion: "1"},
+			ExpectedNew:  api.ObjectMeta{Name: "test", ResourceVersion: "1"},
+			ExpectedErrs: []string{},
+		},
+		"valid with deletion fields": {
+			Old:          api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionTimestamp: &now, DeletionGracePeriodSeconds: &gracePeriodShort},
+			New:          api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionTimestamp: &now, DeletionGracePeriodSeconds: &gracePeriodShort},
+			ExpectedNew:  api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionTimestamp: &now, DeletionGracePeriodSeconds: &gracePeriodShort},
+			ExpectedErrs: []string{},
+		},
+
+		"invalid set deletionTimestamp": {
+			Old:          api.ObjectMeta{Name: "test", ResourceVersion: "1"},
+			New:          api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionTimestamp: &now},
+			ExpectedNew:  api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionTimestamp: &now},
+			ExpectedErrs: []string{"field.deletionTimestamp: Invalid value: \"1970-01-01T00:16:40Z\": field is immutable; may only be changed via deletion"},
+		},
+		"invalid clear deletionTimestamp": {
+			Old:          api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionTimestamp: &now},
+			New:          api.ObjectMeta{Name: "test", ResourceVersion: "1"},
+			ExpectedNew:  api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionTimestamp: &now},
+			ExpectedErrs: []string{}, // no errors, validation copies the old value
+		},
+		"invalid change deletionTimestamp": {
+			Old:          api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionTimestamp: &now},
+			New:          api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionTimestamp: &later},
+			ExpectedNew:  api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionTimestamp: &now},
+			ExpectedErrs: []string{}, // no errors, validation copies the old value
+		},
+
+		"invalid set deletionGracePeriodSeconds": {
+			Old:          api.ObjectMeta{Name: "test", ResourceVersion: "1"},
+			New:          api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionGracePeriodSeconds: &gracePeriodShort},
+			ExpectedNew:  api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionGracePeriodSeconds: &gracePeriodShort},
+			ExpectedErrs: []string{"field.deletionGracePeriodSeconds: Invalid value: 30: field is immutable; may only be changed via deletion"},
+		},
+		"invalid clear deletionGracePeriodSeconds": {
+			Old:          api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionGracePeriodSeconds: &gracePeriodShort},
+			New:          api.ObjectMeta{Name: "test", ResourceVersion: "1"},
+			ExpectedNew:  api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionGracePeriodSeconds: &gracePeriodShort},
+			ExpectedErrs: []string{}, // no errors, validation copies the old value
+		},
+		"invalid change deletionGracePeriodSeconds": {
+			Old:          api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionGracePeriodSeconds: &gracePeriodShort},
+			New:          api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionGracePeriodSeconds: &gracePeriodLong},
+			ExpectedNew:  api.ObjectMeta{Name: "test", ResourceVersion: "1", DeletionGracePeriodSeconds: &gracePeriodLong},
+			ExpectedErrs: []string{"field.deletionGracePeriodSeconds: Invalid value: 40: field is immutable; may only be changed via deletion"},
+		},
+	}
+
+	for k, tc := range testcases {
+		errs := ValidateObjectMetaUpdate(&tc.New, &tc.Old, field.NewPath("field"))
+		if len(errs) != len(tc.ExpectedErrs) {
+			t.Logf("%s: Expected: %#v", k, tc.ExpectedErrs)
+			t.Logf("%s: Got: %#v", k, errs)
+			t.Errorf("%s: expected %d errors, got %d", k, len(tc.ExpectedErrs), len(errs))
+			continue
+		}
+		for i := range errs {
+			if errs[i].Error() != tc.ExpectedErrs[i] {
+				t.Errorf("%s: error #%d: expected %q, got %q", k, i, tc.ExpectedErrs[i], errs[i].Error())
+			}
+		}
+		if !reflect.DeepEqual(tc.New, tc.ExpectedNew) {
+			t.Errorf("%s: Expected after validation:\n%#v\ngot\n%#v", k, tc.ExpectedNew, tc.New)
+		}
+	}
+}
+
 // Ensure trailing slash is allowed in generate name
 func TestValidateObjectMetaTrimsTrailingSlash(t *testing.T) {
 	errs := ValidateObjectMeta(
@@ -134,64 +267,18 @@ func TestValidateObjectMetaTrimsTrailingSlash(t *testing.T) {
 	}
 }
 
-func TestValidateLabels(t *testing.T) {
-	successCases := []map[string]string{
-		{"simple": "bar"},
-		{"now-with-dashes": "bar"},
-		{"1-starts-with-num": "bar"},
-		{"1234": "bar"},
-		{"simple/simple": "bar"},
-		{"now-with-dashes/simple": "bar"},
-		{"now-with-dashes/now-with-dashes": "bar"},
-		{"now.with.dots/simple": "bar"},
-		{"now-with.dashes-and.dots/simple": "bar"},
-		{"1-num.2-num/3-num": "bar"},
-		{"1234/5678": "bar"},
-		{"1.2.3.4/5678": "bar"},
-		{"UpperCaseAreOK123": "bar"},
-		{"goodvalue": "123_-.BaR"},
+// Ensure updating finalizers is disallowed
+func TestValidateObjectMetaUpdateDisallowsUpdatingFinalizers(t *testing.T) {
+	errs := ValidateObjectMetaUpdate(
+		&api.ObjectMeta{Name: "test", ResourceVersion: "1", Finalizers: []string{"orphaning"}},
+		&api.ObjectMeta{Name: "test", ResourceVersion: "1"},
+		field.NewPath("field"),
+	)
+	if len(errs) != 1 {
+		t.Fatalf("unexpected errors: %v", errs)
 	}
-	for i := range successCases {
-		errs := ValidateLabels(successCases[i], field.NewPath("field"))
-		if len(errs) != 0 {
-			t.Errorf("case[%d] expected success, got %#v", i, errs)
-		}
-	}
-
-	labelNameErrorCases := []map[string]string{
-		{"nospecialchars^=@": "bar"},
-		{"cantendwithadash-": "bar"},
-		{"only/one/slash": "bar"},
-		{strings.Repeat("a", 254): "bar"},
-	}
-	for i := range labelNameErrorCases {
-		errs := ValidateLabels(labelNameErrorCases[i], field.NewPath("field"))
-		if len(errs) != 1 {
-			t.Errorf("case[%d] expected failure", i)
-		} else {
-			detail := errs[0].Detail
-			if detail != qualifiedNameErrorMsg {
-				t.Errorf("error detail %s should be equal %s", detail, qualifiedNameErrorMsg)
-			}
-		}
-	}
-
-	labelValueErrorCases := []map[string]string{
-		{"toolongvalue": strings.Repeat("a", 64)},
-		{"backslashesinvalue": "some\\bad\\value"},
-		{"nocommasallowed": "bad,value"},
-		{"strangecharsinvalue": "?#$notsogood"},
-	}
-	for i := range labelValueErrorCases {
-		errs := ValidateLabels(labelValueErrorCases[i], field.NewPath("field"))
-		if len(errs) != 1 {
-			t.Errorf("case[%d] expected failure", i)
-		} else {
-			detail := errs[0].Detail
-			if detail != labelValueErrorMsg {
-				t.Errorf("error detail %s should be equal %s", detail, labelValueErrorMsg)
-			}
-		}
+	if !strings.Contains(errs[0].Error(), "field is immutable") {
+		t.Errorf("unexpected error message: %v", errs)
 	}
 }
 
@@ -223,20 +310,23 @@ func TestValidateAnnotations(t *testing.T) {
 		}
 	}
 
-	nameErrorCases := []map[string]string{
-		{"nospecialchars^=@": "bar"},
-		{"cantendwithadash-": "bar"},
-		{"only/one/slash": "bar"},
-		{strings.Repeat("a", 254): "bar"},
+	nameErrorCases := []struct {
+		annotations map[string]string
+		expect      string
+	}{
+		{map[string]string{"nospecialchars^=@": "bar"}, "must match the regex"},
+		{map[string]string{"cantendwithadash-": "bar"}, "must match the regex"},
+		{map[string]string{"only/one/slash": "bar"}, "must match the regex"},
+		{map[string]string{strings.Repeat("a", 254): "bar"}, "must be no more than"},
 	}
 	for i := range nameErrorCases {
-		errs := ValidateAnnotations(nameErrorCases[i], field.NewPath("field"))
+		errs := ValidateAnnotations(nameErrorCases[i].annotations, field.NewPath("field"))
 		if len(errs) != 1 {
-			t.Errorf("case[%d] expected failure", i)
-		}
-		detail := errs[0].Detail
-		if detail != qualifiedNameErrorMsg {
-			t.Errorf("error detail %s should be equal %s", detail, qualifiedNameErrorMsg)
+			t.Errorf("case[%d]: expected failure", i)
+		} else {
+			if !strings.Contains(errs[0].Detail, nameErrorCases[i].expect) {
+				t.Errorf("case[%d]: error details do not include %q: %q", i, nameErrorCases[i].expect, errs[0].Detail)
+			}
 		}
 	}
 	totalSizeErrorCases := []map[string]string{
@@ -548,7 +638,7 @@ func TestValidatePersistentVolumeClaimUpdate(t *testing.T) {
 }
 
 func TestValidateVolumes(t *testing.T) {
-	lun := 1
+	lun := int32(1)
 	successCase := []api.Volume{
 		{Name: "abc", VolumeSource: api.VolumeSource{HostPath: &api.HostPathVolumeSource{Path: "/mnt/path1"}}},
 		{Name: "123", VolumeSource: api.VolumeSource{HostPath: &api.HostPathVolumeSource{Path: "/mnt/path2"}}},
@@ -1126,6 +1216,10 @@ func TestValidateVolumeMounts(t *testing.T) {
 		{Name: "abc", MountPath: "/foo"},
 		{Name: "123", MountPath: "/bar"},
 		{Name: "abc-123", MountPath: "/baz"},
+		{Name: "abc-123", MountPath: "/baa", SubPath: ""},
+		{Name: "abc-123", MountPath: "/bab", SubPath: "baz"},
+		{Name: "abc-123", MountPath: "/bac", SubPath: ".baz"},
+		{Name: "abc-123", MountPath: "/bad", SubPath: "..baz"},
 	}
 	if errs := validateVolumeMounts(successCase, volumes, field.NewPath("field")); len(errs) != 0 {
 		t.Errorf("expected success: %v", errs)
@@ -1137,6 +1231,10 @@ func TestValidateVolumeMounts(t *testing.T) {
 		"empty mountpath":     {{Name: "abc", MountPath: ""}},
 		"colon mountpath":     {{Name: "abc", MountPath: "foo:bar"}},
 		"mountpath collision": {{Name: "foo", MountPath: "/path/a"}, {Name: "bar", MountPath: "/path/a"}},
+		"absolute subpath":    {{Name: "abc", MountPath: "/bar", SubPath: "/baz"}},
+		"subpath in ..":       {{Name: "abc", MountPath: "/bar", SubPath: "../baz"}},
+		"subpath contains ..": {{Name: "abc", MountPath: "/bar", SubPath: "baz/../bat"}},
+		"subpath ends in ..":  {{Name: "abc", MountPath: "/bar", SubPath: "./.."}},
 	}
 	for k, v := range errorCases {
 		if errs := validateVolumeMounts(v, volumes, field.NewPath("field")); len(errs) == 0 {
@@ -1284,6 +1382,22 @@ func TestValidateContainers(t *testing.T) {
 					api.ResourceName(api.ResourceCPU):    resource.MustParse("10"),
 					api.ResourceName(api.ResourceMemory): resource.MustParse("10G"),
 					api.ResourceName("my.org/resource"):  resource.MustParse("10m"),
+				},
+			},
+			ImagePullPolicy: "IfNotPresent",
+		},
+		{
+			Name:  "resources-test-with-gpu",
+			Image: "image",
+			Resources: api.ResourceRequirements{
+				Requests: api.ResourceList{
+					api.ResourceName(api.ResourceCPU):    resource.MustParse("10"),
+					api.ResourceName(api.ResourceMemory): resource.MustParse("10G"),
+				},
+				Limits: api.ResourceList{
+					api.ResourceName(api.ResourceCPU):       resource.MustParse("10"),
+					api.ResourceName(api.ResourceMemory):    resource.MustParse("10G"),
+					api.ResourceName(api.ResourceNvidiaGPU): resource.MustParse("1"),
 				},
 			},
 			ImagePullPolicy: "IfNotPresent",
@@ -1507,6 +1621,25 @@ func TestValidateContainers(t *testing.T) {
 				Image: "image",
 				Resources: api.ResourceRequirements{
 					Limits: getResourceLimits("0", "-10"),
+				},
+				ImagePullPolicy: "IfNotPresent",
+			},
+		},
+		"Resource can only have GPU limit": {
+			{
+				Name:  "resources-request-limit-edge",
+				Image: "image",
+				Resources: api.ResourceRequirements{
+					Requests: api.ResourceList{
+						api.ResourceName(api.ResourceCPU):       resource.MustParse("10"),
+						api.ResourceName(api.ResourceMemory):    resource.MustParse("10G"),
+						api.ResourceName(api.ResourceNvidiaGPU): resource.MustParse("1"),
+					},
+					Limits: api.ResourceList{
+						api.ResourceName(api.ResourceCPU):       resource.MustParse("10"),
+						api.ResourceName(api.ResourceMemory):    resource.MustParse("10G"),
+						api.ResourceName(api.ResourceNvidiaGPU): resource.MustParse("1"),
+					},
 				},
 				ImagePullPolicy: "IfNotPresent",
 			},
@@ -1821,52 +1954,6 @@ func TestValidatePod(t *testing.T) {
 				NodeName: "foobar",
 			},
 		},
-		{ // Serialized affinity requirements in annotations.
-			ObjectMeta: api.ObjectMeta{
-				Name:      "123",
-				Namespace: "ns",
-				// TODO: Uncomment and move this block into Annotations map once
-				// RequiredDuringSchedulingRequiredDuringExecution is implemented
-				//					"requiredDuringSchedulingRequiredDuringExecution": {
-				//						"nodeSelectorTerms": [{
-				//							"matchExpressions": [{
-				//								"key": "key1",
-				//								"operator": "Exists"
-				//							}]
-				//						}]
-				//					},
-				Annotations: map[string]string{
-					api.AffinityAnnotationKey: `
-					{"nodeAffinity": {
-						"requiredDuringSchedulingIgnoredDuringExecution": {
-							"nodeSelectorTerms": [{
-								"matchExpressions": [{
-									"key": "key2",
-									"operator": "In",
-									"values": ["value1", "value2"]
-								}]
-							}]
-						},
-						"preferredDuringSchedulingIgnoredDuringExecution": [
-							{
-								"weight": 10,
-								"preference": {"matchExpressions": [
-									{
-										"key": "foo",
-										"operator": "In", "values": ["bar"]
-									}
-								]}
-							}
-						]
-					}}`,
-				},
-			},
-			Spec: api.PodSpec{
-				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
-				RestartPolicy: api.RestartPolicyAlways,
-				DNSPolicy:     api.DNSClusterFirst,
-			},
-		},
 	}
 	for _, pod := range successCases {
 		if errs := ValidatePod(&pod); len(errs) != 0 {
@@ -1911,7 +1998,177 @@ func TestValidatePod(t *testing.T) {
 				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
 			},
 		},
-		"invalid json of affinity in pod annotations": {
+	}
+	for k, v := range errorCases {
+		if errs := ValidatePod(&v); len(errs) == 0 {
+			t.Errorf("expected failure for %q", k)
+		}
+	}
+}
+
+func TestValidateAffinity(t *testing.T) {
+	successCases := []api.Pod{
+		{ // Serialized affinity requirements in annotations.
+			ObjectMeta: api.ObjectMeta{
+				Name:      "123",
+				Namespace: "ns",
+				// TODO: Uncomment and move this block into Annotations map once
+				// RequiredDuringSchedulingRequiredDuringExecution is implemented
+				//		"requiredDuringSchedulingRequiredDuringExecution": {
+				//			"nodeSelectorTerms": [{
+				//				"matchExpressions": [{
+				//					"key": "key1",
+				//					"operator": "Exists"
+				//				}]
+				//			}]
+				//		},
+				Annotations: map[string]string{
+					api.AffinityAnnotationKey: `
+					{"nodeAffinity": {
+						"requiredDuringSchedulingIgnoredDuringExecution": {
+							"nodeSelectorTerms": [{
+								"matchExpressions": [{
+									"key": "key2",
+									"operator": "In",
+									"values": ["value1", "value2"]
+								}]
+							}]
+						},
+						"preferredDuringSchedulingIgnoredDuringExecution": [
+							{
+								"weight": 10,
+								"preference": {"matchExpressions": [
+									{
+										"key": "foo",
+										"operator": "In", "values": ["bar"]
+									}
+								]}
+							}
+						]
+					}}`,
+				},
+			},
+			Spec: api.PodSpec{
+				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
+				RestartPolicy: api.RestartPolicyAlways,
+				DNSPolicy:     api.DNSClusterFirst,
+			},
+		},
+		{ // Serialized pod affinity in affinity requirements in annotations.
+			ObjectMeta: api.ObjectMeta{
+				Name:      "123",
+				Namespace: "ns",
+				// TODO: Uncomment and move this block into Annotations map once
+				// RequiredDuringSchedulingRequiredDuringExecution is implemented
+				//		"requiredDuringSchedulingRequiredDuringExecution": [{
+				//			"labelSelector": {
+				//				"matchExpressions": [{
+				//					"key": "key2",
+				//					"operator": "In",
+				//					"values": ["value1", "value2"]
+				//				}]
+				//			},
+				//			"namespaces":["ns"],
+				//			"topologyKey": "zone"
+				//		}]
+				Annotations: map[string]string{
+					api.AffinityAnnotationKey: `
+					{"podAffinity": {
+						"requiredDuringSchedulingIgnoredDuringExecution": [{
+							"labelSelector": {
+								"matchExpressions": [{
+									"key": "key2",
+									"operator": "In",
+									"values": ["value1", "value2"]
+								}]
+							},
+							"topologyKey": "zone",
+							"namespaces": ["ns"]
+						}],
+						"preferredDuringSchedulingIgnoredDuringExecution": [{
+							"weight": 10,
+							"podAffinityTerm": {
+								"labelSelector": {
+									"matchExpressions": [{
+										"key": "key2",
+										"operator": "NotIn",
+										"values": ["value1", "value2"]
+									}]
+								},
+								"namespaces": ["ns"],
+								"topologyKey": "region"
+							}
+						 }]
+					}}`,
+				},
+			},
+			Spec: api.PodSpec{
+				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
+				RestartPolicy: api.RestartPolicyAlways,
+				DNSPolicy:     api.DNSClusterFirst,
+			},
+		},
+		{ // Serialized pod anti affinity with different Label Operators in affinity requirements in annotations.
+			ObjectMeta: api.ObjectMeta{
+				Name:      "123",
+				Namespace: "ns",
+				// TODO: Uncomment and move this block into Annotations map once
+				// RequiredDuringSchedulingRequiredDuringExecution is implemented
+				//		"requiredDuringSchedulingRequiredDuringExecution": [{
+				//			"labelSelector": {
+				//				"matchExpressions": [{
+				//					"key": "key2",
+				//					"operator": "In",
+				//					"values": ["value1", "value2"]
+				//				}]
+				//			},
+				//			"namespaces":["ns"],
+				//			"topologyKey": "zone"
+				//		}]
+				Annotations: map[string]string{
+					api.AffinityAnnotationKey: `
+					{"podAntiAffinity": {
+						"requiredDuringSchedulingIgnoredDuringExecution": [{
+							"labelSelector": {
+								"matchExpressions": [{
+									"key": "key2",
+									"operator": "Exists"
+								}]
+							},
+							"topologyKey": "zone",
+							"namespaces": ["ns"]
+						}],
+						"preferredDuringSchedulingIgnoredDuringExecution": [{
+							"weight": 10,
+							"podAffinityTerm": {
+								"labelSelector": {
+									"matchExpressions": [{
+										"key": "key2",
+										"operator": "DoesNotExist"
+									}]
+								},
+								"namespaces": ["ns"],
+								"topologyKey": "region"
+							}
+						}]
+					}}`,
+				},
+			},
+			Spec: api.PodSpec{
+				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
+				RestartPolicy: api.RestartPolicyAlways,
+				DNSPolicy:     api.DNSClusterFirst,
+			},
+		},
+	}
+	for _, pod := range successCases {
+		if errs := ValidatePod(&pod); len(errs) != 0 {
+			t.Errorf("expected success: %v", errs)
+		}
+	}
+
+	errorCases := map[string]api.Pod{
+		"invalid json of node affinity in pod annotations": {
 			ObjectMeta: api.ObjectMeta{
 				Name:      "123",
 				Namespace: "ns",
@@ -1929,7 +2186,7 @@ func TestValidatePod(t *testing.T) {
 				DNSPolicy:     api.DNSClusterFirst,
 			},
 		},
-		"invalid node selector requirement in affinity in pod annotations, operator can't be null": {
+		"invalid node selector requirement in node affinity in pod annotations, operator can't be null": {
 			ObjectMeta: api.ObjectMeta{
 				Name:      "123",
 				Namespace: "ns",
@@ -1950,7 +2207,7 @@ func TestValidatePod(t *testing.T) {
 				DNSPolicy:     api.DNSClusterFirst,
 			},
 		},
-		"invalid preferredSchedulingTerm in affinity in pod annotations, weight should be in range 1-100": {
+		"invalid preferredSchedulingTerm in node affinity in pod annotations, weight should be in range 1-100": {
 			ObjectMeta: api.ObjectMeta{
 				Name:      "123",
 				Namespace: "ns",
@@ -2008,6 +2265,209 @@ func TestValidatePod(t *testing.T) {
 							}]
 						},
 					}}`,
+				},
+			},
+			Spec: api.PodSpec{
+				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
+				RestartPolicy: api.RestartPolicyAlways,
+				DNSPolicy:     api.DNSClusterFirst,
+			},
+		},
+		"invalid weight in preferredDuringSchedulingIgnoredDuringExecution in pod affinity annotations, weight should be in range 1-100": {
+			ObjectMeta: api.ObjectMeta{
+				Name:      "123",
+				Namespace: "ns",
+				Annotations: map[string]string{
+					api.AffinityAnnotationKey: `
+					{"podAffinity": {"preferredDuringSchedulingIgnoredDuringExecution": [{
+						"weight": 109,
+						"podAffinityTerm":
+						{
+							"labelSelector": {
+								"matchExpressions": [{
+									"key": "key2",
+									"operator": "NotIn",
+									"values": ["value1", "value2"]
+								}]
+							},
+							"namespaces": ["ns"],
+							"topologyKey": "region"
+						}
+					}]}}`,
+				},
+			},
+			Spec: api.PodSpec{
+				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
+				RestartPolicy: api.RestartPolicyAlways,
+				DNSPolicy:     api.DNSClusterFirst,
+			},
+		},
+		"invalid labelSelector in preferredDuringSchedulingIgnoredDuringExecution in podaffinity annotations, values should be empty if the operator is Exists": {
+			ObjectMeta: api.ObjectMeta{
+				Name:      "123",
+				Namespace: "ns",
+				Annotations: map[string]string{
+					api.AffinityAnnotationKey: `
+					{"podAffinity": {"preferredDuringSchedulingIgnoredDuringExecution": [{
+						"weight": 10,
+						"podAffinityTerm":
+						{
+							"labelSelector": {
+								"matchExpressions": [{
+									"key": "key2",
+									"operator": "Exists",
+									"values": ["value1", "value2"]
+								}]
+							},
+							"namespaces": ["ns"],
+							"topologyKey": "region"
+						}
+					}]}}`,
+				},
+			},
+			Spec: api.PodSpec{
+				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
+				RestartPolicy: api.RestartPolicyAlways,
+				DNSPolicy:     api.DNSClusterFirst,
+			},
+		},
+		"invalid name space in preferredDuringSchedulingIgnoredDuringExecution in podaffinity annotations, name space shouldbe valid": {
+			ObjectMeta: api.ObjectMeta{
+				Name:      "123",
+				Namespace: "ns",
+				Annotations: map[string]string{
+					api.AffinityAnnotationKey: `
+					{"podAffinity": {"preferredDuringSchedulingIgnoredDuringExecution": [{
+						"weight": 10,
+						"podAffinityTerm":
+						{
+							"labelSelector": {
+								"matchExpressions": [{
+									"key": "key2",
+									"operator": "Exists",
+									"values": ["value1", "value2"]
+								}]
+							},
+							"namespaces": ["INVALID_NAMESPACE"],
+							"topologyKey": "region"
+						}
+					}]}}`,
+				},
+			},
+			Spec: api.PodSpec{
+				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
+				RestartPolicy: api.RestartPolicyAlways,
+				DNSPolicy:     api.DNSClusterFirst,
+			},
+		},
+		"invalid labelOperator in preferredDuringSchedulingIgnoredDuringExecution in podantiaffinity annotations, labelOperator should be proper": {
+			ObjectMeta: api.ObjectMeta{
+				Name:      "123",
+				Namespace: "ns",
+				Annotations: map[string]string{
+					api.AffinityAnnotationKey: `
+					{"podAntiAffinity": {"preferredDuringSchedulingIgnoredDuringExecution": [{
+						"weight": 10,
+						"podAffinityTerm":
+						{
+							"labelSelector": {
+								"matchExpressions": [{
+									"key": "key2",
+									"operator": "WrongOp",
+									"values": ["value1", "value2"]
+								}]
+							},
+							"namespaces": ["ns"],
+							"topologyKey": "region"
+						}
+					}]}}`,
+				},
+			},
+			Spec: api.PodSpec{
+				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
+				RestartPolicy: api.RestartPolicyAlways,
+				DNSPolicy:     api.DNSClusterFirst,
+			},
+		},
+		"invalid pod affinity, empty topologyKey is not allowed for hard pod affinity": {
+			ObjectMeta: api.ObjectMeta{
+				Name:      "123",
+				Namespace: "ns",
+				Annotations: map[string]string{
+					api.AffinityAnnotationKey: `
+					{"podAffinity": {"requiredDuringSchedulingIgnoredDuringExecution": [{
+						"weight": 10,
+						"podAffinityTerm":
+						{
+							"labelSelector": {
+								"matchExpressions": [{
+									"key": "key2",
+									"operator": "In",
+									"values": ["value1", "value2"]
+								}]
+							},
+							"namespaces": ["ns"],
+							"topologyKey": ""
+						}
+					}]}}`,
+				},
+			},
+			Spec: api.PodSpec{
+				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
+				RestartPolicy: api.RestartPolicyAlways,
+				DNSPolicy:     api.DNSClusterFirst,
+			},
+		},
+		"invalid pod anti-affinity, empty topologyKey is not allowed for hard pod anti-affinity": {
+			ObjectMeta: api.ObjectMeta{
+				Name:      "123",
+				Namespace: "ns",
+				Annotations: map[string]string{
+					api.AffinityAnnotationKey: `
+					{"podAntiAffinity": {"requiredDuringSchedulingIgnoredDuringExecution": [{
+						"weight": 10,
+						"podAffinityTerm":
+						{
+							"labelSelector": {
+								"matchExpressions": [{
+									"key": "key2",
+									"operator": "In",
+									"values": ["value1", "value2"]
+								}]
+							},
+							"namespaces": ["ns"],
+							"topologyKey": ""
+						}
+					}]}}`,
+				},
+			},
+			Spec: api.PodSpec{
+				Containers:    []api.Container{{Name: "ctr", Image: "image", ImagePullPolicy: "IfNotPresent"}},
+				RestartPolicy: api.RestartPolicyAlways,
+				DNSPolicy:     api.DNSClusterFirst,
+			},
+		},
+		"invalid pod anti-affinity, empty topologyKey is not allowed for soft pod affinity": {
+			ObjectMeta: api.ObjectMeta{
+				Name:      "123",
+				Namespace: "ns",
+				Annotations: map[string]string{
+					api.AffinityAnnotationKey: `
+					{"podAffinity": {"preferredDuringSchedulingIgnoredDuringExecution": [{
+						"weight": 10,
+						"podAffinityTerm":
+						{
+							"labelSelector": {
+								"matchExpressions": [{
+									"key": "key2",
+									"operator": "In",
+									"values": ["value1", "value2"]
+								}]
+							},
+							"namespaces": ["ns"],
+							"topologyKey": ""
+						}
+					}]}}`,
 				},
 			},
 			Spec: api.PodSpec{
@@ -2124,11 +2584,11 @@ func TestValidatePodUpdate(t *testing.T) {
 		},
 		{
 			api.Pod{
-				ObjectMeta: api.ObjectMeta{Name: "foo", DeletionTimestamp: &now},
+				ObjectMeta: api.ObjectMeta{Name: "foo"},
 				Spec:       api.PodSpec{Containers: []api.Container{{Image: "foo:V1"}}},
 			},
 			api.Pod{
-				ObjectMeta: api.ObjectMeta{Name: "foo"},
+				ObjectMeta: api.ObjectMeta{Name: "foo", DeletionTimestamp: &now},
 				Spec:       api.PodSpec{Containers: []api.Container{{Image: "foo:V1"}}},
 			},
 			true,
@@ -3820,23 +4280,24 @@ func TestValidateResourceNames(t *testing.T) {
 	table := []struct {
 		input   string
 		success bool
+		expect  string
 	}{
-		{"memory", true},
-		{"cpu", true},
-		{"network", false},
-		{"disk", false},
-		{"", false},
-		{".", false},
-		{"..", false},
-		{"my.favorite.app.co/12345", true},
-		{"my.favorite.app.co/_12345", false},
-		{"my.favorite.app.co/12345_", false},
-		{"kubernetes.io/..", false},
-		{"kubernetes.io/" + strings.Repeat("a", 63), true},
-		{"kubernetes.io/" + strings.Repeat("a", 64), false},
-		{"kubernetes.io//", false},
-		{"kubernetes.io", false},
-		{"kubernetes.io/will/not/work/", false},
+		{"memory", true, ""},
+		{"cpu", true, ""},
+		{"network", false, ""},
+		{"disk", false, ""},
+		{"", false, ""},
+		{".", false, ""},
+		{"..", false, ""},
+		{"my.favorite.app.co/12345", true, ""},
+		{"my.favorite.app.co/_12345", false, ""},
+		{"my.favorite.app.co/12345_", false, ""},
+		{"kubernetes.io/..", false, ""},
+		{"kubernetes.io/" + strings.Repeat("a", 63), true, ""},
+		{"kubernetes.io/" + strings.Repeat("a", 64), false, ""},
+		{"kubernetes.io//", false, ""},
+		{"kubernetes.io", false, ""},
+		{"kubernetes.io/will/not/work/", false, ""},
 	}
 	for k, item := range table {
 		err := validateResourceName(item.input, field.NewPath("field"))
@@ -3846,8 +4307,8 @@ func TestValidateResourceNames(t *testing.T) {
 			t.Errorf("expected failure for input %q", item.input)
 			for i := range err {
 				detail := err[i].Detail
-				if detail != "" && detail != qualifiedNameErrorMsg {
-					t.Errorf("%d: expected error detail either empty or %s, got %s", k, qualifiedNameErrorMsg, detail)
+				if detail != "" && !strings.Contains(detail, item.expect) {
+					t.Errorf("%d: expected error detail either empty or %s, got %s", k, item.expect, detail)
 				}
 			}
 		}
@@ -4452,9 +4913,23 @@ func TestValidateNamespaceStatusUpdate(t *testing.T) {
 				Phase: api.NamespaceActive,
 			},
 		}, true},
+		// Cannot set deletionTimestamp via status update
 		{api.Namespace{
 			ObjectMeta: api.ObjectMeta{
 				Name: "foo"}},
+			api.Namespace{
+				ObjectMeta: api.ObjectMeta{
+					Name:              "foo",
+					DeletionTimestamp: &now},
+				Status: api.NamespaceStatus{
+					Phase: api.NamespaceTerminating,
+				},
+			}, false},
+		// Can update phase via status update
+		{api.Namespace{
+			ObjectMeta: api.ObjectMeta{
+				Name:              "foo",
+				DeletionTimestamp: &now}},
 			api.Namespace{
 				ObjectMeta: api.ObjectMeta{
 					Name:              "foo",
@@ -4909,13 +5384,13 @@ func TestValidateEndpoints(t *testing.T) {
 				ObjectMeta: api.ObjectMeta{Name: "mysvc", Namespace: "namespace"},
 				Subsets: []api.EndpointSubset{
 					{
-						Addresses: []api.EndpointAddress{{IP: "2001:0db8:85a3:0042:1000:8a2e:0370:7334"}},
+						Addresses: []api.EndpointAddress{{IP: "[2001:0db8:85a3:0042:1000:8a2e:0370:7334]"}},
 						Ports:     []api.EndpointPort{{Name: "a", Port: 93, Protocol: "TCP"}},
 					},
 				},
 			},
 			errorType:   "FieldValueInvalid",
-			errorDetail: "must be a valid IPv4 address",
+			errorDetail: "must be a valid IP address",
 		},
 		"Multiple ports, one without name": {
 			endpoints: api.Endpoints{
@@ -4965,7 +5440,7 @@ func TestValidateEndpoints(t *testing.T) {
 				},
 			},
 			errorType:   "FieldValueInvalid",
-			errorDetail: "must be a valid IPv4 address",
+			errorDetail: "must be a valid IP address",
 		},
 		"Port missing number": {
 			endpoints: api.Endpoints{

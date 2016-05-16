@@ -140,15 +140,13 @@ install_additional_packages() {
 # variable that will be used as the kubelet command line flags
 #   KUBELET_CMD_FLAGS
 assemble_kubelet_flags() {
-  KUBELET_CMD_FLAGS="--v=2"
+  log_level="--v=2"
   if [ -n "${KUBELET_TEST_LOG_LEVEL:-}" ]; then
-    KUBELET_CMD_FLAGS="${KUBELET_TEST_LOG_LEVEL}"
+    log_level="${KUBELET_TEST_LOG_LEVEL}"
   fi
+  KUBELET_CMD_FLAGS="${log_level} ${KUBELET_TEST_ARGS:-}"
   if [ -n "${KUBELET_PORT:-}" ]; then
     KUBELET_CMD_FLAGS="${KUBELET_CMD_FLAGS} --port=${KUBELET_PORT}"
-  fi
-  if [ -n "${KUBELET_TEST_ARGS:-}" ]; then
-    KUBELET_CMD_FLAGS="${KUBELET_CMD_FLAGS} ${KUBELET_TEST_ARGS}"
   fi
   if [ "${KUBERNETES_MASTER:-}" = "true" ]; then
     KUBELET_CMD_FLAGS="${KUBELET_CMD_FLAGS} --enable-debugging-handlers=false --hairpin-mode=none"
@@ -181,10 +179,14 @@ assemble_kubelet_flags() {
   fi
   # Add the unconditional flags
   KUBELET_CMD_FLAGS="${KUBELET_CMD_FLAGS} --cloud-provider=gce --allow-privileged=true --cgroup-root=/ --system-cgroups=/system --kubelet-cgroups=/kubelet --babysit-daemons=true --config=/etc/kubernetes/manifests --cluster-dns=${DNS_SERVER_IP} --cluster-domain=${DNS_DOMAIN}"
+  echo "KUBELET_OPTS=\"${KUBELET_CMD_FLAGS}\"" > /etc/default/kubelet
 }
 
 restart_docker_daemon() {
-  readonly DOCKER_OPTS="-p /var/run/docker.pid --bridge=cbr0 --iptables=false --ip-masq=false"
+  DOCKER_OPTS="-p /var/run/docker.pid --bridge=cbr0 --iptables=false --ip-masq=false"
+  if [ "${TEST_CLUSTER:-}" = "true" ]; then
+    DOCKER_OPTS="${DOCKER_OPTS} --debug"
+  fi
   echo "DOCKER_OPTS=\"${DOCKER_OPTS} ${EXTRA_DOCKER_OPTS:-}\"" > /etc/default/docker
   # Make sure the network interface cbr0 is created before restarting docker daemon
   while ! [ -L /sys/class/net/cbr0 ]; do
@@ -272,14 +274,6 @@ mount_master_pd() {
   chgrp -R etcd "${mount_point}/var/etcd"
 }
 
-# A helper function that adds an entry to a token file.
-# $1: account information
-# $2: token file
-add_token_entry() {
-  current_token=$(dd if=/dev/urandom bs=128 count=1 2>/dev/null | base64 | tr -d "=+/" | dd bs=32 count=1 2>/dev/null)
-  echo "${current_token},$1,$1" >> $2
-}
-
 # After the first boot and on upgrade, these files exists on the master-pd
 # and should never be touched again (except perhaps an additional service
 # account, see NB below.)
@@ -306,16 +300,6 @@ create_master_auth() {
     echo "${KUBE_BEARER_TOKEN},admin,admin" > "${known_tokens_csv}"
     echo "${KUBELET_TOKEN},kubelet,kubelet" >> "${known_tokens_csv}"
     echo "${KUBE_PROXY_TOKEN},kube_proxy,kube_proxy" >> "${known_tokens_csv}"
-
-    # Generate tokens for other "service accounts".  Append to known_tokens.
-    #
-    # NB: If this list ever changes, this script actually has to
-    # change to detect the existence of this file, kill any deleted
-    # old tokens and add any new tokens (to handle the upgrade case).
-    add_token_entry "system:scheduler" "${known_tokens_csv}"
-    add_token_entry "system:controller_manager" "${known_tokens_csv}"
-    add_token_entry "system:logging" "${known_tokens_csv}"
-    add_token_entry "system:monitoring" "${known_tokens_csv}"
   fi
 
   if [ -n "${PROJECT_ID:-}" ] && [ -n "${TOKEN_URL:-}" ] && [ -n "${TOKEN_BODY:-}" ] && [ -n "${NODE_NETWORK:-}" ]; then
@@ -353,7 +337,7 @@ create_master_kubelet_auth() {
 # $5: pod name, which should be either etcd or etcd-events
 prepare_etcd_manifest() {
   etcd_temp_file="/tmp/$5"
-  cp /home/kubernetes/kube-manifests/kubernetes/trusty/etcd.manifest "${etcd_temp_file}"
+  cp /home/kubernetes/kube-manifests/kubernetes/gci-trusty/etcd.manifest "${etcd_temp_file}"
   sed -i -e "s@{{ *suffix *}}@$1@g" "${etcd_temp_file}"
   sed -i -e "s@{{ *port *}}@$2@g" "${etcd_temp_file}"
   sed -i -e "s@{{ *server_port *}}@$3@g" "${etcd_temp_file}"
@@ -429,8 +413,7 @@ start_kube_apiserver() {
   timeout 30 docker load -i /home/kubernetes/kube-docker-files/kube-apiserver.tar
 
   # Calculate variables and assemble the command line.
-  params="--cloud-provider=gce --address=127.0.0.1 --etcd-servers=http://127.0.0.1:4001 --tls-cert-file=/etc/srv/kubernetes/server.cert --tls-private-key-file=/etc/srv/kubernetes/server.key --secure-port=443 --client-ca-file=/etc/srv/kubernetes/ca.crt --token-auth-file=/etc/srv/kubernetes/known_tokens.csv --basic-auth-file=/etc/srv/kubernetes/basic_auth.csv --allow-privileged=true"
-  params="${params} --etcd-servers-overrides=/events#http://127.0.0.1:4002"
+  params="--cloud-provider=gce --address=127.0.0.1 --etcd-servers=http://127.0.0.1:4001 --tls-cert-file=/etc/srv/kubernetes/server.cert --tls-private-key-file=/etc/srv/kubernetes/server.key --secure-port=443 --client-ca-file=/etc/srv/kubernetes/ca.crt --token-auth-file=/etc/srv/kubernetes/known_tokens.csv --basic-auth-file=/etc/srv/kubernetes/basic_auth.csv --allow-privileged=true --authorization-mode=ABAC --authorization-policy-file=/etc/srv/kubernetes/abac-authz-policy.jsonl --etcd-servers-overrides=/events#http://127.0.0.1:4002 ${APISERVER_TEST_ARGS:-}"
   if [ -n "${SERVICE_CLUSTER_IP_RANGE:-}" ]; then
     params="${params} --service-cluster-ip-range=${SERVICE_CLUSTER_IP_RANGE}"
   fi
@@ -442,9 +425,6 @@ start_kube_apiserver() {
   fi
   if [ -n "${RUNTIME_CONFIG:-}" ]; then
     params="${params} --runtime-config=${RUNTIME_CONFIG}"
-  fi
-  if [ -n "${APISERVER_TEST_ARGS:-}" ]; then
-    params="${params} ${APISERVER_TEST_ARGS}"
   fi
   log_level="--v=2"
   if [ -n "${API_SERVER_TEST_LOG_LEVEL:-}" ]; then
@@ -458,7 +438,9 @@ start_kube_apiserver() {
   fi
   readonly kube_apiserver_docker_tag=$(cat /home/kubernetes/kube-docker-files/kube-apiserver.docker_tag)
 
-  src_file="/home/kubernetes/kube-manifests/kubernetes/trusty/kube-apiserver.manifest"
+  src_dir="/home/kubernetes/kube-manifests/kubernetes/gci-trusty"
+  cp "${src_dir}/abac-authz-policy.jsonl" /etc/srv/kubernetes/
+  src_file="${src_dir}/kube-apiserver.manifest"
   remove_salt_config_comments "${src_file}"
   # Evaluate variables
   sed -i -e "s@{{params}}@${params}@g" "${src_file}"
@@ -491,7 +473,7 @@ start_kube_controller_manager() {
   timeout 30 docker load -i /home/kubernetes/kube-docker-files/kube-controller-manager.tar
 
   # Calculate variables and assemble the command line.
-  params="--master=127.0.0.1:8080 --cloud-provider=gce --root-ca-file=/etc/srv/kubernetes/ca.crt --service-account-private-key-file=/etc/srv/kubernetes/server.key"
+  params="--master=127.0.0.1:8080 --cloud-provider=gce --root-ca-file=/etc/srv/kubernetes/ca.crt --service-account-private-key-file=/etc/srv/kubernetes/server.key ${CONTROLLER_MANAGER_TEST_ARGS:-}"
   if [ -n "${PROJECT_ID:-}" ] && [ -n "${TOKEN_URL:-}" ] && [ -n "${TOKEN_BODY:-}" ] && [ -n "${NODE_NETWORK:-}" ]; then
     params="${params} --cloud-config=/etc/gce.conf"
   fi
@@ -512,12 +494,9 @@ start_kube_controller_manager() {
     log_level="${CONTROLLER_MANAGER_TEST_LOG_LEVEL}"
   fi
   params="${params} ${log_level}"
-  if [ -n "${CONTROLLER_MANAGER_TEST_ARGS:-}" ]; then
-    params="${params} ${CONTROLLER_MANAGER_TEST_ARGS}"
-  fi
   readonly kube_rc_docker_tag=$(cat /home/kubernetes/kube-docker-files/kube-controller-manager.docker_tag)
 
-  src_file="/home/kubernetes/kube-manifests/kubernetes/trusty/kube-controller-manager.manifest"
+  src_file="/home/kubernetes/kube-manifests/kubernetes/gci-trusty/kube-controller-manager.manifest"
   remove_salt_config_comments "${src_file}"
   # Evaluate variables
   sed -i -e "s@{{srv_kube_path}}@/etc/srv/kubernetes@g" "${src_file}"
@@ -545,19 +524,15 @@ start_kube_scheduler() {
   timeout 30 docker load -i "${kube_home}/kube-docker-files/kube-scheduler.tar"
 
   # Calculate variables and set them in the manifest.
-  params=""
   log_level="--v=2"
   if [ -n "${SCHEDULER_TEST_LOG_LEVEL:-}" ]; then
     log_level="${SCHEDULER_TEST_LOG_LEVEL}"
   fi
-  params="${params} ${log_level}"
-  if [ -n "${SCHEDULER_TEST_ARGS:-}" ]; then
-    params="${params} ${SCHEDULER_TEST_ARGS}"
-  fi
+  params="${log_level} ${SCHEDULER_TEST_ARGS:-}"
   readonly kube_scheduler_docker_tag=$(cat "${kube_home}/kube-docker-files/kube-scheduler.docker_tag")
 
   # Remove salt comments and replace variables with values
-  src_file="${kube_home}/kube-manifests/kubernetes/trusty/kube-scheduler.manifest"
+  src_file="${kube_home}/kube-manifests/kubernetes/gci-trusty/kube-scheduler.manifest"
   remove_salt_config_comments "${src_file}"
   sed -i -e "s@{{params}}@${params}@g" "${src_file}"
   sed -i -e "s@{{pillar\['kube_docker_registry'\]}}@${DOCKER_REGISTRY}@g" "${src_file}"
@@ -581,7 +556,7 @@ start_fluentd() {
 # $1: addon category under /etc/kubernetes
 # $2: manifest source dir
 setup_addon_manifests() {
-  src_dir="/home/kubernetes/kube-manifests/kubernetes/trusty/$2"
+  src_dir="/home/kubernetes/kube-manifests/kubernetes/gci-trusty/$2"
   dst_dir="/etc/kubernetes/$1/$2"
   if [ ! -d "${dst_dir}" ]; then
     mkdir -p "${dst_dir}"
@@ -603,9 +578,9 @@ setup_addon_manifests() {
   chmod 644 "${dst_dir}"/*
 }
 
-# Prepares the manifests of k8s addons static pods.
-prepare_kube_addons() {
-  addon_src_dir="/home/kubernetes/kube-manifests/kubernetes/trusty"
+# Prepares the manifests of k8s addons, and starts the addon manager.
+start_kube_addons() {
+  addon_src_dir="/home/kubernetes/kube-manifests/kubernetes/gci-trusty"
   addon_dst_dir="/etc/kubernetes/addons"
   # Set up manifests of other addons.
   if [ "${ENABLE_CLUSTER_MONITORING:-}" = "influxdb" ] || \
@@ -636,9 +611,11 @@ prepare_kube_addons() {
     sed -i -e "s@{{ *metrics_memory_per_node *}}@${metrics_memory_per_node}@g" "${controller_yaml}"
     sed -i -e "s@{{ *eventer_memory_per_node *}}@${eventer_memory_per_node}@g" "${controller_yaml}"
   fi
-  cp "${addon_src_dir}/namespace.yaml" "${addon_dst_dir}"
   if [ "${ENABLE_L7_LOADBALANCING:-}" = "glbc" ]; then
     setup_addon_manifests "addons" "cluster-loadbalancing/glbc"
+    glbc_yaml="${addon_dst_dir}/cluster-loadbalancing/glbc/glbc.yaml"
+    remove_salt_config_comments "${glbc_yaml}"
+    sed -i -e "s@{{ *kube_uid *}}@${KUBE_UID:-}@g" "${glbc_yaml}"
   fi
   if [ "${ENABLE_CLUSTER_DNS:-}" = "true" ]; then
     setup_addon_manifests "addons" "dns"
@@ -675,13 +652,6 @@ prepare_kube_addons() {
     setup_addon_manifests "admission-controls" "limit-range"
   fi
 
-  # Prepare the scripts for running addons.
-  addon_script_dir="/var/lib/cloud/scripts/kubernetes"
-  mkdir -p "${addon_script_dir}"
-  cp "${addon_src_dir}/kube-addons.sh" "${addon_script_dir}"
-  cp "${addon_src_dir}/kube-addon-update.sh" "${addon_script_dir}"
-  chmod 544 "${addon_script_dir}/"*.sh
-  # In case that some GCE customized trusty may have a read-only /root.
-  mount -t tmpfs tmpfs /root
-  mount --bind -o remount,rw,noexec /root
+  # Place addon manager pod manifest
+  cp "${addon_src_dir}/kube-addon-manager.yaml" /etc/kubernetes/manifests
 }

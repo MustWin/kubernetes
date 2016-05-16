@@ -39,7 +39,7 @@ done
 
 if [[ ${#targets[@]} -eq 0 ]]; then
   # Do not run on third_party directories.
-  targets=$(go list ./... | grep -v "third_party")
+  targets=$(go list ./... | egrep -v "/(third_party|vendor)/")
 fi
 
 # Do this in parallel; results in 5-10x speedup.
@@ -58,7 +58,7 @@ for i in $targets
     #
     # The intended result is that each incantation of this line returns
     # either 0 (pass) or 1 (fail).
-    godep go vet "${goflags[@]:+${goflags[@]}}" "$i" 2>&1 \
+    go vet "${goflags[@]:+${goflags[@]}}" "$i" 2>&1 \
       | grep -v -E "exit status|GO15VENDOREXPERIMENT=" \
       || fail=${PIPESTATUS[0]}
     exit $fail
@@ -72,6 +72,4 @@ for p in $pids; do
   wait $p || let "failedfiles+=1"
 done
 
-# hardcode a healthy exit until all vet errors can be fixed
-#exit $failedfiles
-exit 0
+exit $failedfiles

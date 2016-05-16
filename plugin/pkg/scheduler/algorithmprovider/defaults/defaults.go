@@ -32,8 +32,10 @@ import (
 	"github.com/golang/glog"
 )
 
-// GCE instances can have up to 16 PD volumes attached.
-const DefaultMaxGCEPDVolumes = 16
+const (
+	// GCE instances can have up to 16 PD volumes attached.
+	DefaultMaxGCEPDVolumes = 16
+)
 
 // getMaxVols checks the max PD volumes environment variable, otherwise returning a default value
 func getMaxVols(defaultVal int) int {
@@ -71,7 +73,7 @@ func init() {
 		},
 	)
 	// PodFitsPorts has been replaced by PodFitsHostPorts for better user understanding.
-	// For backwards compatibility with 1.0, PodFitsPorts is regitered as well.
+	// For backwards compatibility with 1.0, PodFitsPorts is registered as well.
 	factory.RegisterFitPredicate("PodFitsPorts", predicates.PodFitsHostPorts)
 	// ImageLocalityPriority prioritizes nodes based on locality of images requested by a pod. Nodes with larger size
 	// of already-installed packages required by the pod will be preferred over nodes with no already-installed
@@ -84,16 +86,31 @@ func init() {
 	// Fit is determined by resource availability.
 	// This predicate is actually a default predicate, because it is invoked from
 	// predicates.GeneralPredicates()
-	factory.RegisterFitPredicateFactory(
-		"PodFitsResources",
-		func(args factory.PluginFactoryArgs) algorithm.FitPredicate {
-			return predicates.NewResourceFitPredicate(args.NodeInfo)
-		},
-	)
+	factory.RegisterFitPredicate("PodFitsResources", predicates.PodFitsResources)
 	// Fit is determined by the presence of the Host parameter and a string match
 	// This predicate is actually a default predicate, because it is invoked from
 	// predicates.GeneralPredicates()
 	factory.RegisterFitPredicate("HostName", predicates.PodFitsHost)
+	// Fit is determined by node selector query.
+	factory.RegisterFitPredicate("MatchNodeSelector", predicates.PodSelectorMatches)
+	// Fit is determined by inter-pod affinity.
+	factory.RegisterFitPredicateFactory(
+		"MatchInterPodAffinity",
+		func(args factory.PluginFactoryArgs) algorithm.FitPredicate {
+			return predicates.NewPodAffinityPredicate(args.NodeInfo, args.PodLister, args.FailureDomains)
+		},
+	)
+	//pods should be placed in the same topological domain (e.g. same node, same rack, same zone, same power domain, etc.)
+	//as some other pods, or, conversely, should not be placed in the same topological domain as some other pods.
+	factory.RegisterPriorityConfigFactory(
+		"InterPodAffinityPriority",
+		factory.PriorityConfigFactory{
+			Function: func(args factory.PluginFactoryArgs) algorithm.PriorityFunction {
+				return priorities.NewInterPodAffinityPriority(args.NodeInfo, args.NodeLister, args.PodLister, args.HardPodAffinitySymmetricWeight, args.FailureDomains)
+			},
+			Weight: 1,
+		},
+	)
 }
 
 func defaultPredicates() sets.String {
@@ -104,14 +121,7 @@ func defaultPredicates() sets.String {
 		factory.RegisterFitPredicateFactory(
 			"NoVolumeZoneConflict",
 			func(args factory.PluginFactoryArgs) algorithm.FitPredicate {
-				return predicates.NewVolumeZonePredicate(args.NodeInfo, args.PVInfo, args.PVCInfo)
-			},
-		),
-		// Fit is determined by node selector query.
-		factory.RegisterFitPredicateFactory(
-			"MatchNodeSelector",
-			func(args factory.PluginFactoryArgs) algorithm.FitPredicate {
-				return predicates.NewSelectorMatchPredicate(args.NodeInfo)
+				return predicates.NewVolumeZonePredicate(args.PVInfo, args.PVCInfo)
 			},
 		),
 		// Fit is determined by whether or not there would be too many AWS EBS volumes attached to the node
@@ -134,12 +144,7 @@ func defaultPredicates() sets.String {
 		),
 		// GeneralPredicates are the predicates that are enforced by all Kubernetes components
 		// (e.g. kubelet and all schedulers)
-		factory.RegisterFitPredicateFactory(
-			"GeneralPredicates",
-			func(args factory.PluginFactoryArgs) algorithm.FitPredicate {
-				return predicates.GeneralPredicates(args.NodeInfo)
-			},
-		),
+		factory.RegisterFitPredicate("GeneralPredicates", predicates.GeneralPredicates),
 	)
 }
 
