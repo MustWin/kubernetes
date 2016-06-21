@@ -155,7 +155,7 @@ func (s *GenericWrapper) Get(ctx context.Context, key string, objPtr runtime.Obj
 	key = s.prefixKey(key)
 	var raw generic.RawObject
 	err := s.generic.Get(ctx, key, &raw)
-	if err != nil {
+	if err != nil && (!ignoreNotFound || !IsNotFound(err)) {
 		return err
 	}
 	err = s.extractObj(raw, err, objPtr, ignoreNotFound)
