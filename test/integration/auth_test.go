@@ -1302,7 +1302,7 @@ func TestWebhookTokenAuthenticator(t *testing.T) {
 		}()
 		// Expect Alice's requests to succeed.
 		token = AliceToken
-		bodyBytes = bytes.NewReader([]byte(r.body))
+		bodyBytes = bytes.NewReader([]byte(fmt.Sprintf(r.body, "")))
 		req, err = http.NewRequest(r.verb, s.URL+r.URL, bodyBytes)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
