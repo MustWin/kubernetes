@@ -191,22 +191,6 @@ func (s *ConsulKvStorage) Get(ctx context.Context, key string, raw *generic.RawO
 
 type keyFilterFunc func(key string) bool
 
-func (s *ConsulKvStorage) GetToList(ctx context.Context, key string, rawList *[]generic.RawObject) (uint64, error) {
-	if ctx == nil {
-		glog.Errorf("Context is nil")
-	}
-	// ensure that our path is terminated with a / to make it a directory
-	key = s.transformKeyName(key) + "/"
-
-	// create a filter that will omit deep finds
-	myLastIndex := strings.LastIndex(key, "/")
-	fnKeyFilter := func(key string) bool {
-		return myLastIndex == strings.LastIndex(key, "/")
-	}
-
-	return s.listInternal("GetToList ", key, fnKeyFilter, rawList)
-}
-
 func (s *ConsulKvStorage) List(ctx context.Context, key string, resourceVersion string, rawList *[]generic.RawObject) (uint64, error) {
 	if ctx == nil {
 		glog.Errorf("Context is nil")

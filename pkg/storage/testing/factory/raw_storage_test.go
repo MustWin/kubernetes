@@ -251,19 +251,12 @@ func TestList(t *testing.T) {
 		Key		string
 		Value	[]byte
 	}
-	type ListTestReadMethod int
-	const (
-		Use_List	= 1 + iota
-		Use_GetToList
-		Use_Both
-	)
 	type ListTest struct{
 		Name 		string
 		Reason		string
 		Source		[]KeyValSource
 		Result		[][]byte
 		KeyToRead	string
-		ReadMethod	ListTestReadMethod
 	}
 	
 	test_sources := []ListTest{
@@ -290,7 +283,6 @@ func TestList(t *testing.T) {
 				[]byte("foo"),
 			},
 			KeyToRead:	"/some/key",
-			ReadMethod:	Use_Both,
 		},
 		ListTest{
 			Name:		"Ensure List Enumerates Properly",
@@ -323,39 +315,6 @@ func TestList(t *testing.T) {
 				[]byte("bar"),
 			},
 			KeyToRead:	"/some/key",
-			ReadMethod:	Use_List,
-		},
-		ListTest{
-			Name:		"Ensure GetToList Enumerates Properly",
-			Reason:		"This test fails if GetToList doesn't exclude subdirectories or self properly",
-			Source:		[]KeyValSource{
-				{
-					Key:	"/some/key/bar",
-					Value:	[]byte("bar"),
-				},
-				{
-					Key:	"/some/key/baz",
-					Value:	[]byte("baz"),
-				},
-				{
-					Key:	"/some/key/hidden/fail",
-					Value:	[]byte("fail: GetToList recursed into directory"),
-				},
-				{
-					Key:	"/some/foreign/key/fail",
-					Value:	[]byte("fail: GetToList enumerated a foreign directory"),
-				},
-				{
-					Key:	"/some/key",
-					Value:	[]byte("fail: GetToList enumerated self"),
-				},
-			},
-			Result:		[][]byte{
-				[]byte("bar"),
-				[]byte("baz"),
-			},
-			KeyToRead:	"/some/key",
-			ReadMethod:	Use_GetToList,
 		},
 	}
 	
@@ -388,49 +347,35 @@ func TestList(t *testing.T) {
 				}
 			}
 		}()
-		inspectResults := func(t *testing.T, test *ListTest, actual []generic.RawObject) {
-			var expectedIndex int
-			var failed bool
-			for _, a := range actual {
-				if expectedIndex < len(test.Result) {
-					e := test.Result[expectedIndex]
-					if bytes.Equal(e, a.Data) {
-						expectedIndex += 1
-					} else {
-						failed = true  
-					}
-				} else {
-					failed = true
-				}
-			}
+		
+		t.Log("testing List method")
+		actual := make([]generic.RawObject,0)
+		_, err := stg.List(context.TODO(), test.KeyToRead, "", &actual)
+		if err != nil {
+			t.Errorf("Unexpected Error %#v", err)
+		}
+		
+		var expectedIndex int
+		var failed bool
+		for _, a := range actual {
 			if expectedIndex < len(test.Result) {
+				e := test.Result[expectedIndex]
+				if bytes.Equal(e, a.Data) {
+					expectedIndex += 1
+				} else {
+					failed = true  
+				}
+			} else {
 				failed = true
-				t.Logf("Missing %d expected results", len(test.Result) - expectedIndex)
-			}
-			if failed {
-				t.Log(test.Reason)
-				t.Fail()
 			}
 		}
-		
-		if test.ReadMethod == Use_List || test.ReadMethod == Use_Both {
-			t.Log("testing List method")
-			actual := make([]generic.RawObject,0)
-			_, err := stg.List(context.TODO(), test.KeyToRead, "", &actual)
-			if err != nil {
-				t.Errorf("Unexpected Error %#v", err)
-			}
-			inspectResults(t, test, actual)
+		if expectedIndex < len(test.Result) {
+			failed = true
+			t.Logf("Missing %d expected results", len(test.Result) - expectedIndex)
 		}
-		
-		if test.ReadMethod == Use_GetToList || test.ReadMethod == Use_Both {
-			t.Log("testing GetToList method")
-			actual := make([]generic.RawObject,0)
-			_, err := stg.GetToList(context.TODO(), test.KeyToRead, &actual)
-			if err != nil {
-				t.Errorf("Unexpected Error %#v", err)
-			}
-			inspectResults(t, test, actual)
+		if failed {
+			t.Log(test.Reason)
+			t.Fail()
 		}
 	}
 	

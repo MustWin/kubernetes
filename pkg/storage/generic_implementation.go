@@ -168,12 +168,18 @@ func (s *GenericWrapper) GetToList(ctx context.Context, key string, filter Filte
 		glog.Errorf("Context is nil")
 	}
 	key = s.prefixKey(key)
-	rawList := make([]generic.RawObject, 0)
-	listVersion, err := s.generic.GetToList(ctx, key, &rawList)
-	if err != nil && !IsNotFound(err) {
-		return err
+	var rawValue generic.RawObject
+	err := s.generic.Get(ctx, key, &rawValue)
+	if err != nil {
+		if !IsNotFound(err) {
+			return err
+		}
+		rawList := make([]generic.RawObject, 0)
+		return s.outputList(key, filter, listObj, 0, rawList)	
+	} else {
+		rawList := []generic.RawObject{ rawValue }
+		return s.outputList(key, filter, listObj, rawValue.Version, rawList)
 	}
-	return s.outputList(key, filter, listObj, listVersion, rawList)
 }
 
 func (s *GenericWrapper) List(ctx context.Context, key string, resourceVersion string, filter FilterFunc, listObj runtime.Object) error {

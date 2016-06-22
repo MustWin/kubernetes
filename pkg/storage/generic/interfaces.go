@@ -59,10 +59,6 @@ type InterfaceRaw interface {
 	// Treats empty responses and nil response nodes exactly like a not found error.
 	Get(ctx context.Context, key string, raw *RawObject) error
 
-	// GetToList unmarshals json found at key and opaque it into *List api object
-	// (an object that satisfies the runtime.IsList definition).
-	GetToList(ctx context.Context, key string, rawList *[]RawObject) (uint64, error)
-
 	// List unmarshalls jsons found at directory defined by key and opaque them
 	// into *List api object (an object that satisfies runtime.IsList definition).
 	// The returned contents may be delayed, but it is guaranteed that they will

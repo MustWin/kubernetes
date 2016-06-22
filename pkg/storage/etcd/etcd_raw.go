@@ -190,33 +190,6 @@ func (s *etcdLowLevel) Set(ctx context.Context, key string, raw *generic.RawObje
 	return true, nil
 }
 
-// GetToList unmarshals json found at key and opaque it into *List api object
-// (an object that satisfies the runtime.IsList definition).
-func (s *etcdLowLevel) GetToList(ctx context.Context, key string, rawList *[]generic.RawObject) (uint64, error) {
-	if ctx == nil {
-		glog.Errorf("Context is nil")
-	}
-
-	opts := &etcd.GetOptions{
-		Quorum: s.quorum,
-	}
-	response, err := s.etcdKeysAPI.Get(ctx, key, opts)
-
-	var index uint64
-	if response != nil {
-		index = response.Index
-	}
-	if err != nil {
-		if etcdutil.IsEtcdNotFound(err) {
-			return index, nil
-		}
-		return index, toStorageErr(err, key, 0)
-	}
-
-	copyNodeList(response.Node, rawList)
-	return index, nil
-}
-
 func (s *etcdLowLevel) List(ctx context.Context, key string, resourceVersion string, rawList *[]generic.RawObject) (uint64, error) {
 	if ctx == nil {
 		glog.Errorf("Context is nil")

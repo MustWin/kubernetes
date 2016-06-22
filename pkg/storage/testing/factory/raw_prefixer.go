@@ -48,10 +48,6 @@ func(r *RawPrefixer) Get(ctx context.Context, key string, raw *generic.RawObject
 	return r.Internal.Get(ctx, r.Prefix + key, raw)
 }
 
-func(r *RawPrefixer) GetToList(ctx context.Context, key string, rawList *[]generic.RawObject) (uint64, error) {
-	return r.Internal.GetToList(ctx, r.Prefix + key, rawList)
-}
-
 func(r *RawPrefixer) List(ctx context.Context, key string, resourceVersion string, rawList *[]generic.RawObject) (uint64, error) {
 	return r.Internal.List(ctx, r.Prefix + key, resourceVersion, rawList)
 }
