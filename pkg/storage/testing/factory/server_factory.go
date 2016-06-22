@@ -63,7 +63,7 @@ func GetAllTestStorageFactories() []TestServerFactory {
 		//t.Errorf("unexpected error: %v", err)
 	}
 	return []TestServerFactory{
-		//&EtcdTestServerFactory{},
+		&EtcdTestServerFactory{},
 		consulFactory,
 	}
 }
