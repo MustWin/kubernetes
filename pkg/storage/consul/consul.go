@@ -196,7 +196,7 @@ func (s *ConsulKvStorage) GetToList(ctx context.Context, key string, rawList *[]
 		glog.Errorf("Context is nil")
 	}
 	// ensure that our path is terminated with a / to make it a directory
-	key = s.transformKeyName(key)
+	key = s.transformKeyName(key) + "/"
 
 	// create a filter that will omit deep finds
 	myLastIndex := strings.LastIndex(key, "/")
