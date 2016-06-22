@@ -200,7 +200,7 @@ func getHostname(address *kapi.EndpointAddress, podHostnames map[string]endpoint
 	if len(address.Hostname) > 0 {
 		return address.Hostname, true
 	}
-	if hostRecord, exists := podHostnames[address.IP]; exists && len(validation.IsDNS1123Label(hostRecord.HostName)) == 0 {
+	if hostRecord, exists := podHostnames[address.IP]; exists && validation.IsDNS1123Label(hostRecord.HostName) {
 		return hostRecord.HostName, true
 	}
 	return "", false
