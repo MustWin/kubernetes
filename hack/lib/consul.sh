@@ -69,7 +69,7 @@ kube::consul::cleanup() {
 kube::consul::install() {
   (
     cd "${KUBE_ROOT}/third_party"
-    curl -fsSL --retry 3 https://releases.hashicorp.com/consul/${CONSUL_VERSION}/consul_${CONSUL_VERSION}_linux_amd64.zip | tar xzf -
+    curl -fsSL --retry 3 https://bintray.com/gonzalo-mustwin/must-win-consul/download_file?file_path=linux_amd64.zip | tar xzf -
     ln -fns "consul-v${CONSUL_VERSION}-linux-amd64" consul
     kube::log::info "consul v${CONSUL_VERSION} installed. To use:"
     kube::log::info "export PATH=\${PATH}:$(pwd)/consul")

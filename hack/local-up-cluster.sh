@@ -223,9 +223,9 @@ cleanup()
   exit 0
 }
 
-function startETCD {
-    echo "Starting etcd"
-    kube::etcd::start
+function startConsul {
+    echo "Starting Consul"
+    kube::consul::start
 }
 
 function set_service_accounts {
@@ -447,7 +447,7 @@ if [[ "${ENABLE_DAEMON}" = false ]]; then
 trap cleanup EXIT
 fi
 echo "Starting services now!"
-startETCD
+startConsul
 set_service_accounts
 start_apiserver
 start_controller_manager
