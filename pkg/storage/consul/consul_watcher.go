@@ -41,7 +41,7 @@ func nullEmitter(w generic.RawEvent) bool {
 
 func(s *ConsulKvStorage) newConsulWatch(key string, version uint64, deep bool) (*consulWatch, error) {
 	if deep {
-		KVs, qm, err := s.ConsulKv.List(key, nil)
+		KVs, _, err := s.ConsulKv.List(key, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -59,14 +59,11 @@ func(s *ConsulKvStorage) newConsulWatch(key string, version uint64, deep bool) (
 				case w.resultChan <- ev:
 					return true 
 			}
-		}
-		if version == 0 {
-			version = qm.LastIndex
 		}
 		go w.watchDeep(key, version, KVs)
 		return w, nil
 	} else {
-		kv, qm, err := s.ConsulKv.Get(key, nil)
+		kv, _, err := s.ConsulKv.Get(key, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -83,13 +80,6 @@ func(s *ConsulKvStorage) newConsulWatch(key string, version uint64, deep bool) (
 					
 				case w.resultChan <- ev:
 					return true 
-			}
-		}
-		if version == 0 {
-			if kv != nil {
-				version = kv.ModifyIndex
-			} else if qm != nil {
-				version = qm.LastIndex
 			}
 		}
 		go w.watchSingle(key, version, kv)
