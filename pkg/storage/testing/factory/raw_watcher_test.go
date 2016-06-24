@@ -176,6 +176,7 @@ func TestWatchListInitialCreate(t *testing.T) {
 			},
 			{
 				Type:		TestActionStopWatch,
+				Expect:		1,
 			},
 		},
 		Expectations: []WatcherTestExpect{
@@ -187,6 +188,8 @@ func TestWatchListInitialCreate(t *testing.T) {
 				Type:		watch.Added,
 				ValueCur:	[]byte("baz"),
 			},*/
+			{
+			},
 		},
 	}
 	
