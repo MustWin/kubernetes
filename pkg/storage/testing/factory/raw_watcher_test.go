@@ -117,19 +117,24 @@ func(test *WatcherTest) RunTest(t *testing.T, stg generic.InterfaceRaw) {
 			for expectCount := action.Expect; expectCount > 0; expectCount -= 1 {
 				expect := &test.Expectations[currentlyExpecting]
 				select {
-				case got := <- rchan:
-					// translate got into a comparable type for display purposes
-					actual := WatcherTestExpect{
-						Type: 		got.Type,
-						ValueCur:	got.Current.Data,
-						ValuePrev:	got.Previous.Data,
-					}
-					if currentlyExpecting >= len(test.Expectations) {
-						panic("Bad Test: Expectations set has fewer items that expected")
-					}
-					if expect.Type != actual.Type || !bytes.Equal(expect.ValueCur, actual.ValueCur) || !bytes.Equal(expect.ValuePrev, actual.ValuePrev) {
+				case got, ok := <- rchan:
+					if ok {
+						// translate got into a comparable type for display purposes
+						actual := WatcherTestExpect{
+							Type: 		got.Type,
+							ValueCur:	got.Current.Data,
+							ValuePrev:	got.Previous.Data,
+						}
+						if currentlyExpecting >= len(test.Expectations) {
+							panic("Bad Test: Expectations set has fewer items that expected")
+						}
+						if expect.Type != actual.Type || !bytes.Equal(expect.ValueCur, actual.ValueCur) || !bytes.Equal(expect.ValuePrev, actual.ValuePrev) {
+							t.Logf("While performing %v", action)
+							t.Errorf("Expected %v, got %v", expect, actual) 
+						}
+					} else {
 						t.Logf("While performing %v", action)
-						t.Errorf("Expected %v, got %v", expect, actual) 
+						t.Errorf("Result Channel closed while expecting %v", expect)
 					}
 					
 				case <-time.After(10000 * time.Millisecond):
@@ -140,9 +145,11 @@ func(test *WatcherTest) RunTest(t *testing.T, stg generic.InterfaceRaw) {
 			}
 		} else {
 			select {
-			case got := <- rchan:
-				t.Logf("While performing %v", action)
-				t.Errorf("Watch emitted unexpected event %v", got)
+			case got, ok := <- rchan:
+				if ok {
+					t.Logf("While performing %v", action)
+					t.Errorf("Watch emitted unexpected event %v", got)
+				}
 
 			case <-time.After(100 * time.Millisecond):
 			}
@@ -176,7 +183,6 @@ func TestWatchListInitialCreate(t *testing.T) {
 			},
 			{
 				Type:		TestActionStopWatch,
-				Expect:		1,
 			},
 		},
 		Expectations: []WatcherTestExpect{
@@ -188,8 +194,6 @@ func TestWatchListInitialCreate(t *testing.T) {
 				Type:		watch.Added,
 				ValueCur:	[]byte("baz"),
 			},*/
-			{
-			},
 		},
 	}
 	
