@@ -41,7 +41,7 @@ func nullEmitter(w generic.RawEvent) bool {
 
 func(s *ConsulKvStorage) newConsulWatch(key string, version uint64, deep bool) (*consulWatch, error) {
 	if deep {
-		KVs, _, err := s.ConsulKv.List(key, nil)
+		KVs, qm, err := s.ConsulKv.List(key, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -60,10 +60,10 @@ func(s *ConsulKvStorage) newConsulWatch(key string, version uint64, deep bool) (
 					return true 
 			}
 		}
-		go w.watchDeep(key, version, KVs)
+		go w.watchDeep(key, version, qm.LastIndex, KVs)
 		return w, nil
 	} else {
-		kv, _, err := s.ConsulKv.Get(key, nil)
+		kv, qm, err := s.ConsulKv.Get(key, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -82,7 +82,7 @@ func(s *ConsulKvStorage) newConsulWatch(key string, version uint64, deep bool) (
 					return true 
 			}
 		}
-		go w.watchSingle(key, version, kv)
+		go w.watchSingle(key, version, qm.LastIndex, kv)
 		return w, nil
 	}
 }
@@ -95,12 +95,12 @@ func(kvs ByKey) Swap(i, j int)      { kvs[i], kvs[j] = kvs[j], kvs[i] }
 //func(kvs ByKey) Less(i, j int)  { (kvs[i] == nil && kvs[j] != nil) || (kvs[j] != nil && kvs[i].Key < kvs[j].Key) }
 func(kvs ByKey) Less(i, j int) bool { return kvs[i].Key < kvs[j].Key }
 
-func(w *consulWatch) watchDeep(key string, version uint64, kvsLast []*consulapi.KVPair) {
+func(w *consulWatch) watchDeep(key string, version uint64, versionNext uint64, kvsLast []*consulapi.KVPair) {
 	defer w.clean()
 	cont := true
 	sort.Sort(ByKey(kvsLast))
 	kvs := kvsLast
-	versionNext := version
+	//versionNext := version
 	for cont {
 		j := 0
 		for _, kv := range kvs {
@@ -164,11 +164,11 @@ func(w *consulWatch) watchDeep(key string, version uint64, kvsLast []*consulapi.
 }
 
 
-func(w *consulWatch) watchSingle(key string, version uint64, kvLast *consulapi.KVPair) {
+func(w *consulWatch) watchSingle(key string, version uint64, versionNext uint64, kvLast *consulapi.KVPair) {
 	defer w.clean()
 	cont := true
 	kv := kvLast
-	versionNext := version
+	//versionNext := version
 	for cont {
 		if kv == nil && kvLast != nil {
 			cont = w.emit( generic.RawEvent{
