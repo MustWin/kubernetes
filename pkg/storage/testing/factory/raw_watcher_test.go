@@ -2,7 +2,10 @@ package testing
 
 import (
 	"bytes"
+	"fmt"
+	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +32,7 @@ type WatcherTestExpect struct {
 	ValueCur	[]byte
 	ValuePrev	[]byte
 }
+
 type WatcherTestAction struct {
 	Type		WatcherTestActionType
 	Key			string
@@ -40,6 +44,46 @@ type WatcherTest struct {
 	Actions			[]WatcherTestAction
 	Expectations	[]WatcherTestExpect
 }
+
+type SortedExpectations []*WatcherTestExpect
+func(expectations SortedExpectations) Len() int           { return len(expectations) }
+func(expectations SortedExpectations) Swap(i, j int)      { expectations[i], expectations[j] = expectations[j], expectations[i] }
+func CompareExpectations(l, r *WatcherTestExpect) int {
+	compResult := strings.Compare( string(l.Type), string(r.Type))
+	if compResult != 0 {
+		return compResult
+	}
+	
+	compResult = bytes.Compare(l.ValueCur, r.ValueCur)
+	if compResult != 0 {
+		return compResult
+	}
+	
+	return bytes.Compare(l.ValuePrev, r.ValuePrev)
+}
+
+func(expectations SortedExpectations) Less(i, j int) bool {
+	return CompareExpectations( expectations[i], expectations[j] ) < 0
+}
+
+func(expectations SortedExpectations) String() string {
+	if len(expectations) == 0 {
+		return "{}"
+	}
+	
+	output := fmt.Sprintf("{%v", *expectations[0])
+	
+	for i := 1; i < len(expectations); i += 1 {
+		if expectations[i] == nil {
+			output += ", nil"
+		} else {
+			output += fmt.Sprintf(", %v", *expectations[i])
+		}
+	}
+	
+	return output + "}"
+}
+	
 
 func(test *WatcherTest) RunTest(t *testing.T, stg generic.InterfaceRaw) {
 	var w generic.InterfaceRawWatch
@@ -114,32 +158,49 @@ func(test *WatcherTest) RunTest(t *testing.T, stg generic.InterfaceRaw) {
 		}
 		
 		if action.Expect > 0 {
+			if currentlyExpecting + action.Expect > len(test.Expectations) {
+				panic("Bad Test: Expectations set has fewer items that expected")
+			}
+			expectations := make(SortedExpectations, action.Expect)
+			for i := 0; i < action.Expect; i += 1 {
+				expectations[i] = &test.Expectations[currentlyExpecting + i]
+			}
+			sort.Sort(expectations)
+			remaining := expectations
+			received := make(SortedExpectations, 0)
 			for expectCount := action.Expect; expectCount > 0; expectCount -= 1 {
-				expect := &test.Expectations[currentlyExpecting]
 				select {
 				case got, ok := <- rchan:
 					if ok {
 						// translate got into a comparable type for display purposes
-						actual := WatcherTestExpect{
+						actual := &WatcherTestExpect{
 							Type: 		got.Type,
 							ValueCur:	got.Current.Data,
 							ValuePrev:	got.Previous.Data,
 						}
-						if currentlyExpecting >= len(test.Expectations) {
-							panic("Bad Test: Expectations set has fewer items that expected")
-						}
-						if expect.Type != actual.Type || !bytes.Equal(expect.ValueCur, actual.ValueCur) || !bytes.Equal(expect.ValuePrev, actual.ValuePrev) {
+						received = append(received, actual)
+						// try to find actual in expectations
+						x := sort.Search(len(remaining), func(i int) bool{ return CompareExpectations(actual, remaining[i]) <= 0 })
+						
+						if x >= len(remaining) || CompareExpectations(actual, remaining[x]) != 0 {
 							t.Logf("While performing %v", action)
-							t.Errorf("Expected %v, got %v", expect, actual) 
+							t.Errorf("Got unexpected %v, while expecting got one of %v", actual, expectations)
+						} else {
+							if x > 0 {
+								remaining = append(remaining[0:x], remaining[x+1:]...)
+							} else {
+								remaining = remaining[1:]
+							} 
 						}
 					} else {
 						t.Logf("While performing %v", action)
-						t.Errorf("Result Channel closed while expecting %v", expect)
+						t.Errorf("Result Channel closed while expecting one of %v", expectations)
 					}
 					
 				case <-time.After(10000 * time.Millisecond):
 					t.Logf("While performing %v", action)
-					t.Errorf("Watcher failed to emit expected event or took too long to do so... expected %v", expect)
+					t.Logf("Got %v", received)
+					t.Errorf("Watcher failed to emit expected event or took too long to do so... expected one of %v", expectations)
 				}
 				currentlyExpecting += 1
 			}
@@ -165,11 +226,11 @@ func TestWatchListInitialCreate(t *testing.T) {
 				Key:		"/some/key/bar",
 				Value:		[]byte("bar"),
 			},
-			/*{
+			{
 				Type:		TestActionCreate,
 				Key:		"/some/key/baz",
 				Value:		[]byte("baz"),
-			},*/
+			},
 			{
 				Type:		TestActionCreate,
 				Key:		"/some/foreign/key",
@@ -178,8 +239,7 @@ func TestWatchListInitialCreate(t *testing.T) {
 			{
 				Type:		TestActionStartWatchList,
 				Key:		"/some/key",
-				//Expect:	2, // batches may come in arbitrary order... until the test is able to handle this, no batches
-				Expect:		1,
+				Expect:		2,
 			},
 			{
 				Type:		TestActionStopWatch,
@@ -190,10 +250,10 @@ func TestWatchListInitialCreate(t *testing.T) {
 				Type:		watch.Added,
 				ValueCur:	[]byte("bar"),
 			},
-			/*{
+			{
 				Type:		watch.Added,
 				ValueCur:	[]byte("baz"),
-			},*/
+			},
 		},
 	}
 	
