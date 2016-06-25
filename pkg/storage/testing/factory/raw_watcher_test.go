@@ -38,6 +38,7 @@ type WatcherTestAction struct {
 	Key			string
 	Value		[]byte
 	Expect		int
+	ExpectOf	int
 }
 
 type WatcherTest struct {
@@ -158,13 +159,18 @@ func(test *WatcherTest) RunTest(t *testing.T, stg generic.InterfaceRaw) {
 		}
 		
 		if action.Expect > 0 {
-			if currentlyExpecting + action.Expect > len(test.Expectations) {
+			expectOf := action.ExpectOf
+			if action.Expect > expectOf {
+				expectOf = action.Expect
+			}
+			if currentlyExpecting + expectOf > len(test.Expectations) {
 				panic("Bad Test: Expectations set has fewer items that expected")
 			}
-			expectations := make(SortedExpectations, action.Expect)
-			for i := 0; i < action.Expect; i += 1 {
+			expectations := make(SortedExpectations, expectOf)
+			for i := 0; i < expectOf; i += 1 {
 				expectations[i] = &test.Expectations[currentlyExpecting + i]
 			}
+			currentlyExpecting += expectOf
 			sort.Sort(expectations)
 			remaining := expectations
 			received := make(SortedExpectations, 0)
@@ -202,23 +208,21 @@ func(test *WatcherTest) RunTest(t *testing.T, stg generic.InterfaceRaw) {
 					t.Logf("Got %v", received)
 					t.Errorf("Watcher failed to emit expected event or took too long to do so... expected one of %v", expectations)
 				}
-				currentlyExpecting += 1
 			}
-		} else {
-			select {
-			case got, ok := <- rchan:
-				if ok {
-					t.Logf("While performing %v", action)
-					t.Errorf("Watch emitted unexpected event %v", got)
-				}
+		}
+		select {
+		case got, ok := <- rchan:
+			if ok {
+				t.Logf("While performing %v", action)
+				t.Errorf("Watch emitted unexpected event %v", got)
+			}
 
-			case <-time.After(100 * time.Millisecond):
-			}
+		case <-time.After(100 * time.Millisecond):
 		}
 	}
 }
 
-func TestWatchListInitialCreate(t *testing.T) {
+func TestWatchListHistoricalCreate(t *testing.T) {
 	test := &WatcherTest{
 		Actions: []WatcherTestAction{
 			{
@@ -246,6 +250,7 @@ func TestWatchListInitialCreate(t *testing.T) {
 			},
 		},
 		Expectations: []WatcherTestExpect{
+			// 1st batch (Expect 2 of the following 2)
 			{
 				Type:		watch.Added,
 				ValueCur:	[]byte("bar"),
@@ -253,6 +258,171 @@ func TestWatchListInitialCreate(t *testing.T) {
 			{
 				Type:		watch.Added,
 				ValueCur:	[]byte("baz"),
+			},
+		},
+	}
+	
+	server := factory.NewTestClientServer(t)
+	defer server.Terminate(t)
+	key := etcdtest.AddPrefix("/some/key")
+	stg := NewRawPrefixer(server.NewRawStorage(), key)
+	
+	test.RunTest(t, stg)
+}
+
+
+func TestWatchListHistoricalModify(t *testing.T) {
+	test := &WatcherTest{
+		Actions: []WatcherTestAction{
+			{
+				Type:		TestActionCreate,
+				Key:		"/some/key/bar",
+				Value:		[]byte("bar"),
+			},
+			{
+				Type:		TestActionCreate,
+				Key:		"/some/key/baz",
+				Value:		[]byte("baz"),
+			},
+			{
+				Type:		TestActionCreate,
+				Key:		"/some/foreign/key",
+				Value:		[]byte("fail"),
+			},
+			{
+				Type:		TestActionRememberVersion,
+			},
+			{
+				Type:		TestActionSet,
+				Key:		"/some/key/baz",
+				Value:		[]byte("baz v2.0"),
+			},
+			{
+				Type:		TestActionSet,
+				Key:		"/some/foreign/key",
+				Value:		[]byte("fail v2.0"),
+			},
+			{
+				Type:		TestActionStartWatchList,
+				Key:		"/some/key",
+				Expect:		1,
+				ExpectOf:	2,
+			},
+			{
+				Type:		TestActionStopWatch,
+			},
+		},
+		Expectations: []WatcherTestExpect{
+			// 1st batch (Expect 1 of the following 2)
+			{
+				Type:		watch.Modified,
+				ValueCur:	[]byte("baz v2.0"),
+				ValuePrev:	[]byte("baz"),
+			},
+			{
+				Type:		watch.Modified,
+				ValueCur:	[]byte("baz v2.0"),
+				ValuePrev:	[]byte("baz v2.0"),
+			},
+		},
+	}
+	
+	server := factory.NewTestClientServer(t)
+	defer server.Terminate(t)
+	key := etcdtest.AddPrefix("/some/key")
+	stg := NewRawPrefixer(server.NewRawStorage(), key)
+	
+	test.RunTest(t, stg)
+}
+
+
+func TestWatchValueHistoricalCreate(t *testing.T) {
+	test := &WatcherTest{
+		Actions: []WatcherTestAction{
+			{
+				Type:		TestActionCreate,
+				Key:		"/some/key/bar",
+				Value:		[]byte("bar"),
+			},
+			{
+				Type:		TestActionCreate,
+				Key:		"/some/key/baz",
+				Value:		[]byte("fail"),
+			},
+			{
+				Type:		TestActionStartWatchValue,
+				Key:		"/some/key/bar",
+				Expect:		1,
+			},
+			{
+				Type:		TestActionStopWatch,
+			},
+		},
+		Expectations: []WatcherTestExpect{
+			// 1st batch (Expect 1 of the following 1)
+			{
+				Type:		watch.Added,
+				ValueCur:	[]byte("bar"),
+			},
+		},
+	}
+	
+	server := factory.NewTestClientServer(t)
+	defer server.Terminate(t)
+	key := etcdtest.AddPrefix("/some/key")
+	stg := NewRawPrefixer(server.NewRawStorage(), key)
+	
+	test.RunTest(t, stg)
+}
+
+
+func TestWatchValueHistoricalModify(t *testing.T) {
+	test := &WatcherTest{
+		Actions: []WatcherTestAction{
+			{
+				Type:		TestActionCreate,
+				Key:		"/some/key/bar",
+				Value:		[]byte("bar"),
+			},
+			{
+				Type:		TestActionCreate,
+				Key:		"/some/key/baz",
+				Value:		[]byte("baz"),
+			},
+			{
+				Type:		TestActionRememberVersion,
+			},
+			{
+				Type:		TestActionSet,
+				Key:		"/some/key/baz",
+				Value:		[]byte("fail"),
+			},
+			{
+				Type:		TestActionSet,
+				Key:		"/some/key/bar",
+				Value:		[]byte("bar v2.0"),
+			},
+			{
+				Type:		TestActionStartWatchValue,
+				Key:		"/some/key/bar",
+				Expect:		1,
+				ExpectOf:	2,
+			},
+			{
+				Type:		TestActionStopWatch,
+			},
+		},
+		Expectations: []WatcherTestExpect{
+			// 1st batch (Expect 1 of the following 2)
+			{
+				Type:		watch.Modified,
+				ValueCur:	[]byte("bar v2.0"),
+				ValuePrev:	[]byte("bar"),
+			},
+			{
+				Type:		watch.Modified,
+				ValueCur:	[]byte("bar v2.0"),
+				ValuePrev:	[]byte("bar v2.0"),
 			},
 		},
 	}
