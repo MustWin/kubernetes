@@ -21,6 +21,7 @@ CONSUL_VERSION=${CONSUL_VERSION:-0.6.4}
 kube::consul::start() {
   local host=${CONSUL_HOST:-127.0.0.1}
   local port=${CONSUL_PORT:-8500}
+  local consul_exec=${CONSUL_EXEC_FILEPATH:-consul}
 
   which consul >/dev/null || {
     kube::log::usage "consul must be in your PATH"
@@ -43,8 +44,10 @@ kube::consul::start() {
   # Start consul
   CONSUL_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t test-consul.XXXXXX)
   # Todo: launch a consul cluster instead
-  kube::log::info "consul agent -dev -data-dir=${CONSUL_DIR} -bind=${host} -http-port=${port} >/dev/null 2>/dev/null"
-  consul agent -dev -data-dir=${CONSUL_DIR} -bind=${host} -http-port=${port} >/dev/null 2>/dev/null &
+
+  kube::log::info "${consul_exec} agent -dev -data-dir=${CONSUL_DIR} -bind=${host} -http-port=${port} >/dev/null 2>/dev/null"
+  $consul_exec agent -dev -data-dir=${CONSUL_DIR} -bind=${host} -http-port=${port} >/dev/null 2>/dev/null &
+
   CONSUL_PID=$!
 
   echo "Waiting for consul to come up."
@@ -57,13 +60,13 @@ kube::consul::stop() {
   wait "${CONSUL_PID-}" >/dev/null 2>&1 || :
 }
 
-kube::consul::clean_CONSUL_dir() {
+kube::consul::clean_consul_dir() {
   rm -rf "${CONSUL_DIR-}"
 }
 
 kube::consul::cleanup() {
   kube::consul::stop
-  kube::consul::clean_CONSUL_dir
+  kube::consul::clean_consul_dir
 }
 
 kube::consul::install() {

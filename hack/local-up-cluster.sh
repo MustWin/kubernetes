@@ -220,6 +220,10 @@ cleanup()
   [[ -n "${ETCD_PID-}" ]] && kube::etcd::stop
   [[ -n "${ETCD_DIR-}" ]] && kube::etcd::clean_etcd_dir
 
+  # Check if the consul daemon is still running
+  [[ -n "${CONSUL_PID-}" ]] && kube::consul::stop
+  [[ -n "${CONSUL_DIR-}" ]] && kube::consul::clean_consul_dir
+
   exit 0
 }
 
@@ -269,7 +273,8 @@ function start_apiserver {
       --insecure-bind-address="${API_HOST}" \
       --insecure-port="${API_PORT}" \
       --advertise-address="${API_HOST}" \
-      --etcd-servers="http://127.0.0.1:4001" \
+      --storage-backend=consul \
+      --etcd-servers="http://127.0.0.1:3500" \
       --service-cluster-ip-range="10.0.0.0/24" \
       --cloud-provider="${CLOUD_PROVIDER}" \
       --cors-allowed-origins="${API_CORS_ALLOWED_ORIGINS}" >"${APISERVER_LOG}" 2>&1 &
