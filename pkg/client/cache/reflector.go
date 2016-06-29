@@ -307,6 +307,10 @@ func (r *Reflector) ListAndWatch(stopCh <-chan struct{}) error {
 	r.setLastSyncResourceVersion(resourceVersion)
 
 	for {
+		_, err := strconv.ParseUint(resourceVersion, 10, 64)
+		if err != nil {
+			resourceVersion = "0"
+		}
 		options := api.ListOptions{
 			ResourceVersion: resourceVersion,
 			// We want to avoid situations when resyncing is breaking the TCP connection
