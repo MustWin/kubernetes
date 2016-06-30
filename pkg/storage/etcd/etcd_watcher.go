@@ -68,6 +68,7 @@ func exceptKey(except string) includeFunc {
 		return key != except
 	}
 }
+
 /*
 // etcdWatcher converts a native etcd watch to a watch.Interface.
 type etcdWatcher struct {
@@ -257,6 +258,7 @@ func convertRecursiveResponse(node *etcd.Node, response *etcd.Response, incoming
 var (
 	watchChannelHWM HighWaterMark
 )
+
 /*
 // translate pulls stuff from etcd, converts, and pushes out the outgoing channel. Meant to be
 // called as a goroutine.

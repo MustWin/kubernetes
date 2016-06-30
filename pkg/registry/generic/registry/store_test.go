@@ -43,6 +43,7 @@ import (
 )
 
 var factory storagefactory.TestServerFactory
+
 func TestMain(m *testing.M) {
 	storagefactory.RunTestsForStorageFactories(func(fac storagefactory.TestServerFactory) int {
 		factory = fac
@@ -98,7 +99,7 @@ func hasCreated(t *testing.T, pod *api.Pod) func(runtime.Object) bool {
 func NewTestGenericStoreRegistry(t *testing.T) (storagefactory.TestServer, *Store) {
 	podPrefix := "/pods"
 	server := factory.NewTestClientServer(t)
-	s := storage.NewGenericWrapper( server.NewRawStorage(), testapi.Default.StorageCodec(), etcdtest.PathPrefix(), etcdtest.DeserializationCacheSize )
+	s := storage.NewGenericWrapper(server.NewRawStorage(), testapi.Default.StorageCodec(), etcdtest.PathPrefix(), etcdtest.DeserializationCacheSize)
 	strategy := &testRESTStrategy{api.Scheme, api.SimpleNameGenerator, true, false, true}
 
 	return server, &Store{

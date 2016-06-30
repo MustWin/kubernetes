@@ -30,6 +30,7 @@ import (
 )
 
 var factory storagefactory.TestServerFactory
+
 func TestMain(m *testing.M) {
 	storagefactory.RunTestsForStorageFactories(func(fac storagefactory.TestServerFactory) int {
 		factory = fac

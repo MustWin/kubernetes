@@ -8,18 +8,18 @@ import (
 	"k8s.io/kubernetes/pkg/storage/generic"
 	utilruntime "k8s.io/kubernetes/pkg/util/runtime"
 	"k8s.io/kubernetes/pkg/watch"
-	
+
 	"github.com/golang/glog"
 )
 
 // Implements watch.Interface
 type genericWatcher struct {
 	resultChan chan watch.Event
-	stopped     bool
+	stopped    bool
 	raw        generic.InterfaceRawWatch
 	storage    *GenericWrapper
 	filter     FilterFunc
-	name        string
+	name       string
 }
 
 func NewGenericWatcher(raw generic.InterfaceRawWatch, storage *GenericWrapper, filter FilterFunc, name string) *genericWatcher {
@@ -69,28 +69,28 @@ func (w *genericWatcher) run() {
 				}
 			}
 			switch {
-				case prevFilt && !curFilt:
-					evOut.Type = watch.Deleted
-				
-				case !prevFilt && curFilt:
-					evOut.Type = watch.Added
-				
-				case !prevFilt && !curFilt:
-					continue
-					
-				default:
-					evOut.Type = watch.Modified
+			case prevFilt && !curFilt:
+				evOut.Type = watch.Deleted
+
+			case !prevFilt && curFilt:
+				evOut.Type = watch.Added
+
+			case !prevFilt && !curFilt:
+				continue
+
+			default:
+				evOut.Type = watch.Modified
 			}
 		}
-		if evOut.Type != "" { 
+		if evOut.Type != "" {
 			select {
-				case <-time.After(30 * time.Second):
-					glog.Errorf("Cooked watcher left with dangling output while watching %s", w.name)
+			case <-time.After(30 * time.Second):
+				glog.Errorf("Cooked watcher left with dangling output while watching %s", w.name)
+				return
+
+			case w.resultChan <- evOut:
+				if evOut.Type == watch.Error {
 					return
-			
-				case w.resultChan <- evOut:
-					if evOut.Type == watch.Error {
-						return
 				}
 			}
 		}

@@ -175,9 +175,9 @@ func (s *GenericWrapper) GetToList(ctx context.Context, key string, filter Filte
 			return err
 		}
 		rawList := make([]generic.RawObject, 0)
-		return s.outputList(key, filter, listObj, 0, rawList)	
+		return s.outputList(key, filter, listObj, 0, rawList)
 	} else {
-		rawList := []generic.RawObject{ rawValue }
+		rawList := []generic.RawObject{rawValue}
 		return s.outputList(key, filter, listObj, rawValue.Version, rawList)
 	}
 }

@@ -43,6 +43,7 @@ import (
 )
 
 var factory storagetesting.TestServerFactory
+
 func TestMain(m *testing.M) {
 	storagetesting.RunTestsForStorageFactories(func(fac storagetesting.TestServerFactory) int {
 		factory = fac
@@ -195,7 +196,7 @@ func TestHandleWithAuth(t *testing.T) {
 // TestHandleFuncWithAuth verifies HandleFuncWithAuth adds the path
 // to the MuxHelper.RegisteredPaths.
 func TestHandleFuncWithAuth(t *testing.T) {
-	server,storserver, _, assert := setUp(t)
+	server, storserver, _, assert := setUp(t)
 	defer storserver.Terminate(t)
 
 	mh := apiserver.MuxHelper{Mux: http.NewServeMux()}

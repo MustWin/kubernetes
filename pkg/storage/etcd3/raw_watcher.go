@@ -1,20 +1,20 @@
 package etcd3
 
 import (
-	"k8s.io/kubernetes/pkg/storage"
-	"k8s.io/kubernetes/pkg/storage/generic"
 	"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/storage"
+	"k8s.io/kubernetes/pkg/storage/generic"
 	"k8s.io/kubernetes/pkg/watch"
 
-	etcdrpc "github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/clientv3"
+	etcdrpc "github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"sync"
 	"net/http"
+	"sync"
 )
 
 const (
@@ -36,7 +36,6 @@ type watchChanRaw struct {
 	errChan           chan error
 }
 
-
 func (wc *watchChanRaw) Stop() {
 	wc.cancel()
 }
@@ -44,8 +43,6 @@ func (wc *watchChanRaw) Stop() {
 func (wc *watchChanRaw) ResultChan() <-chan generic.RawEvent {
 	return wc.resultChan
 }
-
-
 
 func (wc *watchChanRaw) run() {
 	go wc.startWatching()
@@ -71,7 +68,6 @@ func (wc *watchChanRaw) run() {
 	resultChanWG.Wait()
 	close(wc.resultChan)
 }
-
 
 // sync tries to retrieve existing data and send them to process.
 // The revision to watch will be set to the revision in response.
@@ -130,14 +126,14 @@ func (wc *watchChanRaw) processEvent(wg *sync.WaitGroup) {
 			if res == nil {
 				continue
 			}
-		// If user couldn't receive results fast enough, we also block incoming events from watcher.
-		// Because storing events in local will cause more memory usage.
-		// The worst case would be closing the fast watcher.
-				select {
-				case wc.resultChan <- *res:
-				case <-wc.ctx.Done():
-					return
-				}
+			// If user couldn't receive results fast enough, we also block incoming events from watcher.
+			// Because storing events in local will cause more memory usage.
+			// The worst case would be closing the fast watcher.
+			select {
+			case wc.resultChan <- *res:
+			case <-wc.ctx.Done():
+				return
+			}
 		case <-wc.ctx.Done():
 			return
 		}
@@ -162,19 +158,19 @@ func (wc *watchChanRaw) transform(e *event) (res *generic.RawEvent) {
 	switch {
 	case e.isDeleted:
 		res = &generic.RawEvent{
-			Type:   watch.Deleted,
+			Type:     watch.Deleted,
 			Previous: *oldObj,
-			Current: *curObj,
+			Current:  *curObj,
 		}
 	case e.isCreated:
 		res = &generic.RawEvent{
-			Type:   watch.Added,
+			Type:    watch.Added,
 			Current: *curObj,
 		}
 	default:
 		res = &generic.RawEvent{
-			Type:   watch.Modified,
-			Current: *curObj,
+			Type:     watch.Modified,
+			Current:  *curObj,
 			Previous: *oldObj,
 		}
 	}
@@ -201,7 +197,7 @@ func parseError(err error) *generic.RawEvent {
 	}
 
 	return &generic.RawEvent{
-		Type:   watch.Error,
+		Type:        watch.Error,
 		ErrorStatus: status,
 	}
 }
@@ -222,7 +218,7 @@ func (wc *watchChanRaw) sendError(err error) {
 func (wc *watchChanRaw) sendEvent(e *event) {
 	if len(wc.incomingEventChan) == incomingBufSize {
 		glog.V(2).Infof("Fast watcher, slow processing. Number of buffered events: %d."+
-		"Probably caused by slow decoding, user not receiving fast, or other processing logic",
+			"Probably caused by slow decoding, user not receiving fast, or other processing logic",
 			incomingBufSize)
 	}
 	select {

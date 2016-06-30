@@ -19,19 +19,19 @@ package etcd
 import (
 	"reflect"
 	/*
-	"errors"
-	"fmt"
-	"path"
+		"errors"
+		"fmt"
+		"path"
 
-	"strings"
-	"net"
-	"net/http"
-	"time"
+		"strings"
+		"net"
+		"net/http"
+		"time"
 
 
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/meta"
-	"k8s.io/kubernetes/pkg/conversion"
+		"k8s.io/kubernetes/pkg/api"
+		"k8s.io/kubernetes/pkg/api/meta"
+		"k8s.io/kubernetes/pkg/conversion"
 	*/
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/storage"
@@ -46,9 +46,7 @@ import (
 	utilnet "k8s.io/kubernetes/pkg/util/net"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
-	*/
-	
-	//"k8s.io/kubernetes/pkg/storage/consul"
+	*///"k8s.io/kubernetes/pkg/storage/consul"
 )
 
 // storage.Config object for etcd.
@@ -67,19 +65,20 @@ func NewEtcdStorage(client etcd.Client, codec runtime.Codec, prefix string, quor
 	//	quorum:         quorum,
 	//	cache:          utilcache.NewCache(cacheSize),
 	//}
-	
+
 	//config := &consul.ConsulKvStorageConfig{
 	//	Config:         consul.ConsulConfig{
-	//		WaitTimeout:    10 * time.Second,			
+	//		WaitTimeout:    10 * time.Second,
 	//	},
 	//	Codec:          codec,
 	//	Prefix:         prefix,
 	//}
 	//stor, _ := config.NewStorage()
 	//return stor
-	
+
 	return storage.NewGenericWrapperInt(NewEtcdRawStorage(client, quorum), codec, prefix, cacheSize)
 }
+
 /*
 // etcdHelper is the reference implementation of storage.Interface.
 type etcdHelper struct {
@@ -605,6 +604,7 @@ type etcdCache interface {
 func getTypeName(obj interface{}) string {
 	return reflect.TypeOf(obj).String()
 }
+
 /*
 func (h *etcdHelper) getFromCache(index uint64, filter storage.FilterFunc) (runtime.Object, bool) {
 	startTime := time.Now()

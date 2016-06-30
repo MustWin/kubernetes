@@ -30,8 +30,8 @@ import (
 	"k8s.io/kubernetes/pkg/util/diff"
 )
 
-
 var factory storagetesting.TestServerFactory
+
 func TestMain(m *testing.M) {
 	storagetesting.RunTestsForStorageFactories(func(fac storagetesting.TestServerFactory) int {
 		factory = fac

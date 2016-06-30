@@ -1081,14 +1081,14 @@ func (s *SchedulerServer) frameworkIDStorage(keysAPI etcd.KeysAPI) (frameworkid.
 		idpath = path.Join("/", u.Path)
 	}
 	idpath = path.Join(idpath, s.frameworkName, "frameworkid")
-	
+
 	switch u.Scheme {
 	case "etcd":
 		return frameworkidEtcd.Store(keysAPI, idpath, time.Duration(s.failoverTimeout)*time.Second), nil
 	case "consulkv":
 		config := storagebackend.Config{
-			Type:	storagebackend.StorageTypeConsul,
-			ServerList: 	[]string{"127.0.0.1"},
+			Type:       storagebackend.StorageTypeConsul,
+			ServerList: []string{"127.0.0.1"},
 		}
 		storage, err := storagebackend.CreateRaw(config)
 		if err != nil {

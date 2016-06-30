@@ -27,6 +27,7 @@ import (
 )
 
 var factory storagetesting.TestServerFactory
+
 func TestMain(m *testing.M) {
 	storagetesting.RunTestsForStorageFactories(func(fac storagetesting.TestServerFactory) int {
 		factory = fac
@@ -51,7 +52,6 @@ func TestMasterOther(t *testing.T) {
 	}
 	w.Stop()
 }
-
 
 func TestMasterNoOther(t *testing.T) {
 	server := factory.NewTestClientServer(t)
@@ -86,4 +86,3 @@ func TestMasterNoOtherThenConflict(t *testing.T) {
 	w.Stop()
 	w_ldr.Stop()
 }
-

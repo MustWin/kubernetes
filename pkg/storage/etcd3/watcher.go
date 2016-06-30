@@ -106,6 +106,7 @@ func (w *watcher) createWatchChanRaw(ctx context.Context, key string, rev int64,
 	wc.ctx, wc.cancel = context.WithCancel(ctx)
 	return wc
 }
+
 /*
 func (wc *watchChan) run() {
 	go wc.startWatching()

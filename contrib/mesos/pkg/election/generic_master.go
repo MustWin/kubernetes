@@ -4,7 +4,7 @@ import (
 	"bytes"
 	//"fmt"
 	"time"
-	
+
 	//"k8s.io/kubernetes/pkg/api/unversioned"
 	"k8s.io/kubernetes/pkg/storage"
 	"k8s.io/kubernetes/pkg/storage/generic"
@@ -66,9 +66,9 @@ func (e *genericMasterElector) extendMaster(path, id string, ttl uint64, raw *ge
 	// We don't handle the TTL delete w/o a write case here, it's handled in the next loop
 	// iteration.
 	newRaw := generic.RawObject{
-		Data:       []byte(id),
-		Version:    raw.Version,
-		TTL:        int64(ttl),
+		Data:    []byte(id),
+		Version: raw.Version,
+		TTL:     int64(ttl),
 	}
 	succeeded, err := e.storage.Set(context.TODO(), path, &newRaw)
 	if err != nil {
@@ -85,8 +85,7 @@ func (e *genericMasterElector) extendMaster(path, id string, ttl uint64, raw *ge
 // returns id, nil if the attempt succeeded
 // returns "", err if an error occurred
 func (e *genericMasterElector) becomeMaster(path, id string, ttl uint64) (string, error) {
-	newRaw := generic.RawObject{
-	}
+	newRaw := generic.RawObject{}
 
 	data := []byte(id)
 	err := e.storage.Create(context.TODO(), path, data, &newRaw, ttl)
@@ -94,7 +93,7 @@ func (e *genericMasterElector) becomeMaster(path, id string, ttl uint64) (string
 		// unexpected error
 		return "", err
 	}
-	if !bytes.Equal( data, newRaw.Data ) {
+	if !bytes.Equal(data, newRaw.Data) {
 		return "", nil
 	}
 	return id, nil

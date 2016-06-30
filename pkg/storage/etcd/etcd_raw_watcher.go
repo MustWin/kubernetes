@@ -1,6 +1,4 @@
-
 package etcd
-
 
 import (
 	"fmt"
@@ -18,7 +16,6 @@ import (
 	"golang.org/x/net/context"
 )
 
-
 // etcdWatcher converts a native etcd watch to a watch.Interface.
 type etcdWatcherRaw struct {
 	list    bool // If we're doing a recursive watch, should be true.
@@ -30,8 +27,8 @@ type etcdWatcherRaw struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	etcdCallEnded chan struct{}
-	
-	outgoing      chan generic.RawEvent
+
+	outgoing chan generic.RawEvent
 	userStop chan struct{}
 	stopped  bool
 	stopLock sync.Mutex
@@ -46,9 +43,9 @@ type etcdWatcherRaw struct {
 // The versioner must be able to handle the objects that transform creates.
 func newEtcdWatcherRaw(list bool, quorum bool, include includeFunc) *etcdWatcherRaw {
 	w := &etcdWatcherRaw{
-		list:      list,
-		quorum:    quorum,
-		include:   include,
+		list:    list,
+		quorum:  quorum,
+		include: include,
 		// Buffer this channel, so that the etcd client is not forced
 		// to context switch with every object it gets, and so that a
 		// long time spent decoding an object won't block the *next*
@@ -172,8 +169,8 @@ func (w *etcdWatcherRaw) translate() {
 					}
 				}
 				w.emit(generic.RawEvent{
-					Type:           watch.Error,
-					ErrorStatus:    status,
+					Type:        watch.Error,
+					ErrorStatus: status,
 				})
 			}
 			return
@@ -206,7 +203,7 @@ func (w *etcdWatcherRaw) sendAdd(res *etcd.Response) {
 		action = watch.Modified
 	}
 	ev := generic.RawEvent{
-		Type:   action,
+		Type: action,
 	}
 	copyNode(res.Node, &ev.Current)
 	w.emit(ev)
@@ -221,7 +218,7 @@ func (w *etcdWatcherRaw) sendModify(res *etcd.Response) {
 		return
 	}
 	ev := generic.RawEvent{
-		Type:   watch.Modified,
+		Type: watch.Modified,
 	}
 	copyNode(res.Node, &ev.Current)
 	copyNode(res.PrevNode, &ev.Previous)
@@ -244,7 +241,7 @@ func (w *etcdWatcherRaw) sendDelete(res *etcd.Response) {
 		node.ModifiedIndex = res.Node.ModifiedIndex
 	}
 	ev := generic.RawEvent{
-		Type:   watch.Deleted,
+		Type: watch.Deleted,
 	}
 	copyNode(&node, &ev.Previous)
 	w.emit(ev)

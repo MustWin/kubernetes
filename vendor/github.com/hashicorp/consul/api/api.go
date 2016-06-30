@@ -80,7 +80,7 @@ type QueryMeta struct {
 
 	// How long did the request take
 	RequestTime time.Duration
-	
+
 	// Status response from server
 	HttpStatusCode int
 }
@@ -520,7 +520,7 @@ func (c *Client) write(endpoint string, in, out interface{}, q *WriteOptions) (*
 // parseQueryMeta is used to help parse query meta-data
 func parseQueryMeta(resp *http.Response, q *QueryMeta) error {
 	header := resp.Header
-	
+
 	q.HttpStatusCode = resp.StatusCode
 
 	// Parse the X-Consul-Index

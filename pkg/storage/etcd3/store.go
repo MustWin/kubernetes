@@ -17,8 +17,8 @@ limitations under the License.
 package etcd3
 
 import (
-	"strings"
 	"path"
+	"strings"
 
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/storage"
@@ -399,7 +399,6 @@ func keyWithPrefix(prefix, key string) string {
 	return path.Join(prefix, key)
 }
 
-
 // decode decodes value of bytes into object. It will also set the object resource version to rev.
 // On success, objPtr would be set to the object.
 func decode(codec runtime.Codec, versioner storage.Versioner, value []byte, objPtr runtime.Object, rev int64) error {
@@ -414,6 +413,7 @@ func decode(codec runtime.Codec, versioner storage.Versioner, value []byte, objP
 	versioner.UpdateObject(objPtr, uint64(rev))
 	return nil
 }
+
 /*
 // decodeList decodes a list of values into a list of objects, with resource version set to corresponding rev.
 // On success, ListPtr would be set to the list of objects.

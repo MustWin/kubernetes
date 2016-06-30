@@ -3,7 +3,7 @@ package genericstorage
 import (
 	"fmt"
 	"time"
-	
+
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/components/framework/frameworkid"
 	"k8s.io/kubernetes/pkg/storage"
 	"k8s.io/kubernetes/pkg/storage/generic"
@@ -40,7 +40,7 @@ func Store(api generic.InterfaceRaw, path string, ttl time.Duration) frameworkid
 			return
 		},
 		StoreFunc: func(ctx context.Context, id string) (err error) {
-			_, err = api.Set(ctx, path, &generic.RawObject{ Data: []byte(id), TTL: int64(ttl / time.Second) })
+			_, err = api.Set(ctx, path, &generic.RawObject{Data: []byte(id), TTL: int64(ttl / time.Second)})
 			return
 		},
 	}
