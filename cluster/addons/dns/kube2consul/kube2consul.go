@@ -313,6 +313,7 @@ func (kc *kube2consul) handleEndpointAdd(obj interface{}) {
 		svc, err := kc.getServiceFromEndpoints(e)
 		if err != nil || svc == nil || kapi.IsServiceIPSet(svc) {
 			glog.V(1).Infof("Failed to get endpoint from %v", e.Name)
+			return
 		}
 		endpointsData, _ := json.Marshal(e)
 		value := fmt.Sprintf("%s", endpointsData)
@@ -328,6 +329,7 @@ func (kc *kube2consul) handleEndpointUpdate(old interface{}, newObj interface{})
 		if err != nil || svc == nil || kapi.IsServiceIPSet(svc) {
 			// No headless service found corresponding to endpoints object.
 			glog.V(1).Infof("Failed to get service from %v", e.Name)
+			return
 		}
 		endpointsData, _ := json.Marshal(e)
 		value := fmt.Sprintf("%s", endpointsData)
@@ -343,6 +345,7 @@ func (kc *kube2consul) handleEndpointRemove(obj interface{}) {
 		if err != nil || svc == nil || kapi.IsServiceIPSet(svc) {
 			// No headless service found corresponding to endpoints object.
 			glog.V(1).Infof("Failed to remove endpoint from %v", e.Name)
+			return
 		}
 		if e == nil {
 			kc.deleteKV(endpointSubdomain, svc.Name)
