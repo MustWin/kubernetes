@@ -27,6 +27,7 @@ func (s *ConsulKvStorage) Backends(ctx context.Context) []string {
 	return s.ServerList
 }
 
+
 func (s *ConsulKvStorage) Create(ctx context.Context, key string, data []byte, out *generic.RawObject, ttl uint64) error {
 	trace := util.NewTrace("ConsulKvStorage::Create")
 	defer trace.LogIfLong(250 * time.Millisecond)
@@ -36,28 +37,35 @@ func (s *ConsulKvStorage) Create(ctx context.Context, key string, data []byte, o
 	key = s.transformKeyName(key)
 	// TODO: metrics and stuff
 	// startTime := time.Now()
-	kv := &consulapi.KVPair{
-		Key:         key,
-		Value:       data,
-		ModifyIndex: 0, // explicitly set to indicate Create-Only behavior
-		// TODO: TTL, if and when this functionality becomes available
+	txnOps := consulapi.KVTxnOps{
+		&consulapi.KVTxnOp{
+			Verb:	consulapi.KVCAS,
+			Key:	key,
+			Value:	data,
+			Index:	0,
+		},
 	}
-	succeeded, _, err := s.ConsulKv.CAS_v2(kv, nil)
+	succeeded, response, _, err := s.ConsulKv.Txn(txnOps, nil)
 	// metrics.RecordStuff
 	trace.Step("Object created")
 	if err != nil {
 		return toStorageErr(err, key, 0)
 	}
+	if len(response.Errors) > 0 {
+		err = toStorageTxnErr(response.Errors[0].What, key, 0)
+		// in this context, TestFailed means KeyExists
+		if storage.IsTestFailed(err) {
+			return storage.NewKeyExistsError(key, 0)
+		} else {
+			return err
+		}
+	}
 	if !succeeded {
 		return storage.NewKeyExistsError(key, 0)
-		//kv, _, err = s.ConsulKv.Get(key, nil)
-		//if err != nil {
-		//	return toStorageErr( err, key, 0 )
-		//}
 	}
 	if out != nil {
-		out.Data = kv.Value
-		out.Version = kv.ModifyIndex
+		out.Version = response.Results[0].ModifyIndex
+		out.Data = append([]byte{}, data...)
 		// TODO: emulate TTL if possible
 	}
 	return err
@@ -69,21 +77,35 @@ func (s *ConsulKvStorage) Set(ctx context.Context, key string, raw *generic.RawO
 	}
 	key = s.transformKeyName(key)
 
-	kv := consulapi.KVPair{
-		Key:         key,
-		ModifyIndex: raw.Version,
-		Value:       raw.Data,
-	}
-
 	// Create and CAS are the same operation distinguished by
 	// the same distinguishing value here - ModifyIndex == 0
-	success, _, err := s.ConsulKv.CAS_v2(&kv, nil)
+	txnOps := consulapi.KVTxnOps{
+		&consulapi.KVTxnOp{
+			Verb:	consulapi.KVCAS,
+			Key:	key,
+			Value:	raw.Data,
+			Index:	raw.Version,
+		},
+	}
+	succeeded, response, _, err := s.ConsulKv.Txn(txnOps, nil)
 
-	if success {
-		raw.Version = kv.ModifyIndex
+	if err != nil {
+		return false, toStorageErr(err, key, 0)
+	}
+	if len(response.Errors) > 0 {
+		err = toStorageTxnErr(response.Errors[0].What, key, 0)
+		// in this context, TestFailed means No Error
+		if storage.IsTestFailed(err) {
+			return false, nil
+		} else {
+			return false, err
+		}
+	}
+	if succeeded {
+		raw.Version = response.Results[0].ModifyIndex
 	}
 
-	return success, toStorageErr(err, key, 0)
+	return succeeded, toStorageErr(err, key, 0)
 }
 
 func (s *ConsulKvStorage) Delete(ctx context.Context, key string, rawOut *generic.RawObject, preconditions generic.RawFilterFunc) error {
@@ -247,4 +269,11 @@ func toStorageErr(err error, key string, rv int64) error {
 		return storeErr
 	}
 	return err
+}
+
+func toStorageTxnErr(what string, key string, rv int64) error {
+	if strings.HasSuffix(what, ", index is stale") {
+		return storage.NewResourceVersionConflictsError(key, rv)
+	}
+	return storage.NewInternalError(what)
 }

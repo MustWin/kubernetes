@@ -81,7 +81,7 @@ type QueryMeta struct {
 	// How long did the request take
 	RequestTime time.Duration
 
-	// Status response from server
+	// What status code did we receive
 	HttpStatusCode int
 }
 
@@ -521,14 +521,13 @@ func (c *Client) write(endpoint string, in, out interface{}, q *WriteOptions) (*
 func parseQueryMeta(resp *http.Response, q *QueryMeta) error {
 	header := resp.Header
 
-	q.HttpStatusCode = resp.StatusCode
-
 	// Parse the X-Consul-Index
 	index, err := strconv.ParseUint(header.Get("X-Consul-Index"), 10, 64)
 	if err != nil {
 		return fmt.Errorf("Failed to parse X-Consul-Index: %v", err)
 	}
 	q.LastIndex = index
+	q.HttpStatusCode = resp.StatusCode
 
 	// Parse the X-Consul-LastContact
 	last, err := strconv.ParseUint(header.Get("X-Consul-LastContact"), 10, 64)
