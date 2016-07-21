@@ -26,6 +26,7 @@ import (
 	"k8s.io/kubernetes/pkg/client/cache"
 	"os"
 	"path"
+	"strings"
 	"testing"
 )
 
@@ -54,14 +55,16 @@ const (
 )
 
 func getResourcePathForA(name, namespace, subDomain string) string {
-	return path.Join(basePath, subDomain, namespace, name)
+	resourcePath := path.Join(basePath, subDomain, namespace, name)
+	return strings.Replace(resourcePath, "/", "-", -1)
 }
 
 func assertDnsServiceEntryInConsulAgent(t *testing.T, eca *fakeConsulAgent, serviceName, namespace string, expectedHostPort *testHelper.HostPort) {
 	key := getResourcePathForA(serviceName, namespace, serviceSubDomain)
 	value := eca.writes[key]
 
-	require.True(t, len(value) > 0, "entry not found.")
+	notFound := fmt.Sprintf("entry %v, not found %v", key, eca.writes)
+	require.True(t, len(value) > 0, notFound)
 
 	actualHostPort := value
 	host := expectedHostPort.Host
@@ -72,14 +75,14 @@ func assertDnsServiceEntryInConsulAgent(t *testing.T, eca *fakeConsulAgent, serv
 }
 
 func assertDnsPodEntryInConsulKV(t *testing.T, ekc *fakeConsulKV, podName, namespace string) {
-	key := fmt.Sprintf("%v/%v/", podSubdomain, podName)
+	key := fmt.Sprintf("%v-%v-", podSubdomain, podName)
 	_, ok := ekc.writes[key]
 
-	require.True(t, ok, "entry not found.")
+	require.True(t, ok, "entry not found")
 }
 
 func assertDnsPodEntryNotInConsulKV(t *testing.T, ekc *fakeConsulKV, podName, namespace string) {
-	key := fmt.Sprintf("%v/%v/", podSubdomain, podName)
+	key := fmt.Sprintf("%v-%v-", podSubdomain, podName)
 	_, ok := ekc.writes[key]
 
 	require.False(t, ok, "entry was found.")

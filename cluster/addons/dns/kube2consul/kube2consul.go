@@ -103,7 +103,7 @@ func buildDNSNameString(labels ...string) string {
 		if res == "" {
 			res = label
 		} else {
-			res = fmt.Sprintf("%s/%s", res, label)
+			res = fmt.Sprintf("%s-%s", res, label)
 		}
 	}
 	return res
@@ -259,13 +259,13 @@ func (kc *kube2consul) removeService(obj interface{}) {
 }
 
 func (kc *kube2consul) storeKV(subDomain string, name string, value string) {
-	key := fmt.Sprintf("%v/%v/", subDomain, name)
+	key := fmt.Sprintf("%v-%v-", subDomain, name)
 	p := &consulApi.KVPair{Key: key, Value: []byte(value)}
 	kc.consulKV.Put(p, nil)
 }
 
 func (kc *kube2consul) deleteKV(subDomain string, name string) {
-	key := fmt.Sprintf("%v/%v/", subDomain, name)
+	key := fmt.Sprintf("%v-%v-", subDomain, name)
 	kc.consulKV.Delete(key, nil)
 }
 

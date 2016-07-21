@@ -190,7 +190,7 @@ func CreateEndpointsPodLW(kubeClient *kclient.Client) *kcache.ListWatch {
 // Once the Service is found, we start replying on this containers readiness
 // probe endpoint.
 func WaitForKubernetesService(client *kclient.Client) (svc *kapi.Service) {
-	name := fmt.Sprintf("%v/%v", kapi.NamespaceDefault, kubernetesSvcName)
+	name := fmt.Sprintf("%v-%v", kapi.NamespaceDefault, kubernetesSvcName)
 	glog.Infof("Waiting for service: %v", name)
 	var err error
 	servicePollInterval := 1 * time.Second
