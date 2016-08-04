@@ -80,7 +80,6 @@ func (kvs ByKey) Swap(i, j int) { kvs[i], kvs[j] = kvs[j], kvs[i] }
 //func(kvs ByKey) Less(i, j int)  { (kvs[i] == nil && kvs[j] != nil) || (kvs[j] != nil && kvs[i].Key < kvs[j].Key) }
 func (kvs ByKey) Less(i, j int) bool { return kvs[i].Key < kvs[j].Key }
 
-//TODO: proper implementation
 func (w *consulWatch) decodeObject(kv *consulapi.KVPair) (runtime.Object, error) {
 	obj, err := runtime.Decode(w.storage.Codec(), kv.Value)
 	if err != nil {
