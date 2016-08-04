@@ -76,8 +76,6 @@ type ByKey []*consulapi.KVPair
 func (kvs ByKey) Len() int      { return len(kvs) }
 func (kvs ByKey) Swap(i, j int) { kvs[i], kvs[j] = kvs[j], kvs[i] }
 
-// *** assume that nil entries will NEVER be produced by consul's client
-//func(kvs ByKey) Less(i, j int)  { (kvs[i] == nil && kvs[j] != nil) || (kvs[j] != nil && kvs[i].Key < kvs[j].Key) }
 func (kvs ByKey) Less(i, j int) bool { return kvs[i].Key < kvs[j].Key }
 
 func (w *consulWatch) decodeObject(kv *consulapi.KVPair) (runtime.Object, error) {
