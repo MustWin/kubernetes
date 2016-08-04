@@ -262,11 +262,6 @@ func TestConsulWatch(t *testing.T) {
 	framework.WithConsulKey(cstorage, func(key string) {
 		prefixedKey := consultest.AddPrefix(key)
 
-		w, err := cstorage.Watch(ctx, key, "0", storage.Everything)
-		if err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
-
 		testObject := &api.Pod{ObjectMeta: api.ObjectMeta{Name: "foo"}}
 		testObjectOut := &api.Pod{}
 
@@ -289,6 +284,11 @@ func TestConsulWatch(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		expectedVersion := kvPair.ModifyIndex
+
+		w, err := cstorage.Watch(ctx, key, "0", storage.Everything)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
 
 		//create event
 		event := <-w.ResultChan()
@@ -315,6 +315,11 @@ func TestConsulWatch(t *testing.T) {
 		err = cstorage.Delete(ctx, key, testObjectOut, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
+		}
+
+		event = <-w.ResultChan()
+		if event.Type != watch.Deleted {
+			t.Fatalf("expected: %#v got: %#v", watch.Deleted, event.Type)
 		}
 
 		// should be no events in the stream
@@ -403,6 +408,11 @@ func TestConsulWatchList(t *testing.T) {
 		err = cstorage.Delete(ctx, keyDeep, testObjectOut, nil)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
+		}
+
+		event = <-w.ResultChan()
+		if event.Type != watch.Deleted {
+			t.Fatalf("expected: %#v got: %#v", watch.Deleted, event.Type)
 		}
 
 		// should be no events in the stream

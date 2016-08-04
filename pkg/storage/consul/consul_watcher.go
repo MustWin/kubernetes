@@ -2,15 +2,15 @@ package consul
 
 import (
 	"fmt"
-	"sort"
+	"reflect"
 	"sync"
-	"time"
 
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/storage"
 	utilruntime "k8s.io/kubernetes/pkg/util/runtime"
 	"k8s.io/kubernetes/pkg/watch"
 
+	"github.com/golang/glog"
 	consulapi "github.com/hashicorp/consul/api"
 	consulwatch "github.com/hashicorp/consul/watch"
 )
@@ -28,6 +28,8 @@ type consulWatch struct {
 	stopLock   sync.Mutex
 	stopped    bool
 	versioner  storage.Versioner
+	prevKV     *consulapi.KVPair
+	prevKVs    consulapi.KVPairs
 }
 
 func (w *consulWatch) emit(ev watch.Event) bool {
@@ -78,75 +80,6 @@ func (kvs ByKey) Swap(i, j int) { kvs[i], kvs[j] = kvs[j], kvs[i] }
 //func(kvs ByKey) Less(i, j int)  { (kvs[i] == nil && kvs[j] != nil) || (kvs[j] != nil && kvs[i].Key < kvs[j].Key) }
 func (kvs ByKey) Less(i, j int) bool { return kvs[i].Key < kvs[j].Key }
 
-func (w *consulWatch) watchDeep(key string, version uint64, versionNext uint64, kvsLast []*consulapi.KVPair) {
-	defer w.clean()
-	cont := true
-	sort.Sort(ByKey(kvsLast))
-	kvs := kvsLast
-	//versionNext := version
-	for cont {
-		j := 0
-		for _, kv := range kvs {
-			for ; j < len(kvsLast) && kvsLast[j].Key < kv.Key; j++ {
-				cont = w.emitEvent(watch.Deleted, kvsLast[j])
-			}
-
-			if j >= len(kvsLast) {
-				cont = w.emitEvent(watch.Added, kv)
-				if !cont {
-					return
-				}
-				continue
-			}
-
-			kvLast := kvsLast[j]
-
-			if kv.Key != kvLast.Key {
-				cont = w.emitEvent(watch.Added, kv)
-			} else {
-				j++
-				if kv.ModifyIndex > version {
-					if kv.CreateIndex > version {
-						cont = w.emitEvent(watch.Added, kv)
-					} else {
-						cont = w.emitEvent(watch.Modified, kv)
-					}
-				}
-			}
-
-			if !cont {
-				return
-			}
-		}
-		for ; j < len(kvsLast); j++ {
-			cont = w.emitEvent(watch.Deleted, kvsLast[j])
-		}
-
-		timeout := time.Second * 10
-
-		kvsLast = kvs
-		for {
-			version = versionNext
-			var qm *consulapi.QueryMeta
-			var err error
-			kvs, qm, err = w.storage.consulKv.List(key, &consulapi.QueryOptions{WaitIndex: version, WaitTime: timeout})
-			if err != nil {
-				w.emitError(key, err)
-				return
-			}
-			// if we did not timeout
-			if len(kvs) != 0 {
-				versionNext = qm.LastIndex
-				break
-			}
-			if w.stopped {
-				return
-			}
-		}
-		sort.Sort(ByKey(kvs))
-	}
-}
-
 //TODO: proper implementation
 func (w *consulWatch) decodeObject(kv *consulapi.KVPair) (runtime.Object, error) {
 	obj, err := runtime.Decode(w.storage.Codec(), kv.Value)
@@ -188,115 +121,161 @@ func (w *consulWatch) watchNative(key string, version uint64, kvLast *consulapi.
 	}
 
 	watchPlan.Handler = func(index uint64, obj interface{}) {
-		if obj == nil {
-			return
-		}
-
 		if deep == true {
-			kvs := obj.(consulapi.KVPairs)
-			if len(kvs) == 0 {
-				//TODO: we can't deal with empty results, do nothing
+			var kvs consulapi.KVPairs
+			if obj == nil { //the watched resoure does not exist yet
+				kvs = make([]*consulapi.KVPair, 0)
+			} else {
+				kvs = obj.(consulapi.KVPairs)
 			}
-			for _, kv := range kvs {
-				w.handlewatchEvent(kv)
-			}
+
+			w.handleWatchEventList(kvs)
+			w.prevKVs = kvs
 		} else {
-			kv := obj.(*consulapi.KVPair)
-			w.handlewatchEvent(kv)
+			var kv *consulapi.KVPair
+			if obj == nil { //the watched resoure does not exist yet
+				w.handleWatchEvent(nil)
+			} else {
+				kv = obj.(*consulapi.KVPair)
+				w.handleWatchEvent(kv)
+			}
+
+			w.prevKV = kv
 		}
 	}
 	watchPlan.Run(w.address)
 }
 
-func (w *consulWatch) handlewatchEvent(kv *consulapi.KVPair) {
-	decoded, err := w.decodeObject(kv)
-	if err != nil {
-		utilruntime.HandleError(fmt.Errorf("failure to decode object: %v\n %#v", err, kv))
+func (w *consulWatch) handleWatchEventList(newKVs consulapi.KVPairs) {
+	var added, changed, deleted []*consulapi.KVPair
+	var found, equal bool
+	for _, k := range newKVs {
+		found, equal = containsAndEqual(w.prevKVs, k)
+
+		if !found {
+			added = append(added, k)
+		}
+		if found && !equal {
+			changed = append(changed, k)
+		}
+	}
+
+	for _, k := range w.prevKVs {
+		found, equal = containsAndEqual(newKVs, k)
+
+		if !found {
+			deleted = append(deleted, k)
+		}
+	}
+
+	var decoded runtime.Object
+	var err error
+	for _, k := range added {
+		decoded, err = w.decodeObject(k)
+		if err != nil {
+			utilruntime.HandleError(fmt.Errorf("failure to decode object: %v\n %#v", err, k))
+			continue
+		}
+		w.sendAdded(decoded)
+	}
+	for _, k := range changed {
+		decoded, err = w.decodeObject(k)
+		if err != nil {
+			utilruntime.HandleError(fmt.Errorf("failure to decode object: %v\n %#v", err, k))
+			continue
+		}
+		w.sendModified(decoded)
+	}
+	for _, k := range deleted {
+		decoded, err = w.decodeObject(k)
+		if err != nil {
+			utilruntime.HandleError(fmt.Errorf("failure to decode object: %v\n %#v", err, k))
+			continue
+		}
+		w.sendDeleted(decoded)
+	}
+}
+
+func containsAndEqual(s consulapi.KVPairs, e *consulapi.KVPair) (bool, bool) {
+	for _, a := range s {
+		if a.Key == e.Key {
+			return true, reflect.DeepEqual(a, e)
+		}
+	}
+	return false, false
+}
+
+func (w *consulWatch) sendAdded(obj runtime.Object) {
+	w.emit(watch.Event{
+		Type:   watch.Added,
+		Object: obj,
+	})
+}
+
+func (w *consulWatch) sendModified(obj runtime.Object) {
+	w.emit(watch.Event{
+		Type:   watch.Modified,
+		Object: obj,
+	})
+}
+
+func (w *consulWatch) sendDeleted(obj runtime.Object) {
+	w.emit(watch.Event{
+		Type:   watch.Deleted,
+		Object: obj,
+	})
+}
+
+func (w *consulWatch) sendError(obj runtime.Object) {
+	w.emit(watch.Event{
+		Type:   watch.Error,
+		Object: obj,
+	})
+}
+
+func (w *consulWatch) handleWatchEvent(kv *consulapi.KVPair) {
+	var decoded runtime.Object
+	var err error
+
+	//delete case, decode KVPair which was deleted
+	if kv == nil && w.prevKV != nil {
+		decoded, err = w.decodeObject(w.prevKV)
+		if err != nil {
+			utilruntime.HandleError(fmt.Errorf("failure to decode object: %v\n %#v", err, kv))
+			return
+		}
+	} else if kv != nil { //create/modify case
+		decoded, err = w.decodeObject(kv)
+		if err != nil {
+			utilruntime.HandleError(fmt.Errorf("failure to decode object: %v\n %#v", err, kv))
+			return
+		}
+	} else {
+		//this is unexpected
+		//we should not get a nil kv when w.prevKV is nil as well. This indicates that we deleted a non existing key
+		glog.Errorf("Unexpected watch behaviour. kv and prevKV are nil. Happens when we start watching a non existing key(prefix)")
+		return
+	}
+
+	//DELETE
+	if kv == nil {
+		w.sendDeleted(decoded)
 		return
 	}
 
 	//CREATE
 	if kv.CreateIndex == kv.ModifyIndex {
-		w.emit(watch.Event{
-			Type:   watch.Added,
-			Object: decoded,
-		})
+		w.sendAdded(decoded)
 		return
 	}
 
 	//MODIFY
 	if kv.ModifyIndex > kv.CreateIndex {
-		w.emit(watch.Event{
-			Type:   watch.Modified,
-			Object: decoded,
-		})
+		w.sendModified(decoded)
 		return
 	}
 
-	w.emit(watch.Event{
-		Type:   watch.Error,
-		Object: decoded,
-	})
-}
-
-func (w *consulWatch) watchSingle(key string, version uint64, kvLast *consulapi.KVPair) {
-	defer w.clean()
-	cont := true
-	kv := kvLast
-	for cont {
-		if kv == nil && kvLast != nil {
-			obj, err := w.decodeObject(kvLast)
-			if err != nil {
-				utilruntime.HandleError(fmt.Errorf("failure to decode api object: %v\n'%v' from %#v", err, string(kvLast.Value), kvLast))
-				return
-			}
-
-			cont = w.emit(watch.Event{
-				Type:   watch.Deleted,
-				Object: obj,
-			})
-		}
-		if kv != nil {
-			if kv.ModifyIndex > version {
-				if kv.CreateIndex > version || kvLast == nil {
-					obj, err := w.decodeObject(kvLast)
-					if err != nil {
-						utilruntime.HandleError(fmt.Errorf("failure to decode api object: %v\n'%v' from %#v", err, string(kv.Value), kv))
-						return
-					}
-
-					cont = w.emit(watch.Event{
-						Type:   watch.Added,
-						Object: obj,
-					})
-				} else {
-					obj, err := w.decodeObject(kv)
-					if err != nil {
-						utilruntime.HandleError(fmt.Errorf("failure to decode api object: %v\n'%v' from %#v", err, string(kv.Value), kv))
-						return
-					}
-					cont = w.emit(watch.Event{
-						Type:   watch.Modified,
-						Object: obj,
-					})
-				}
-			}
-		}
-
-		if !cont {
-			return
-		}
-
-		timeout := time.Second * 10
-
-		kvLast = kv
-		var err error
-		kv, _, err = w.storage.consulKv.Get(key, &consulapi.QueryOptions{WaitIndex: version, WaitTime: timeout})
-		if err != nil {
-			w.emitError(key, err)
-			return
-		}
-	}
+	w.sendError(decoded)
 }
 
 func (w *consulWatch) clean() {
