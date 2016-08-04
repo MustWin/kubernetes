@@ -76,22 +76,6 @@ func (h *consulHelper) extractObj(kvPair *consulapi.KVPair, inErr error, objPtr 
 	return err
 }
 
-func (h *consulHelper) extractBoolean(response bool, inErr error, objPtr runtime.Object, ignoreNotFound bool) error {
-	if inErr != nil {
-		return inErr
-	}
-
-	out, gvk, err := h.codec.Decode([]byte(fmt.Sprintf("%v", response)), nil, objPtr)
-	if err != nil {
-		return err
-	}
-	if out != objPtr {
-		return fmt.Errorf("unable to decode object %s into %v", gvk.String(), reflect.TypeOf(objPtr))
-	}
-
-	return err
-}
-
 func (h *consulHelper) prefixConsulKey(key string) string {
 	if strings.HasPrefix(key, h.pathPrefix) {
 		return key
