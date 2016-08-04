@@ -34,7 +34,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-var versioner = APIObjectVersioner{}
+var versioner = storage.APIObjectVersioner{}
 
 // Implements etcdCache interface as empty methods (i.e. does not cache any objects)
 type fakeEtcdCache struct{}

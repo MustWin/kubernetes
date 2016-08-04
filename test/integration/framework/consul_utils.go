@@ -1,5 +1,5 @@
 /*
-Copyright 2015 The Kubernetes Authors All rights reserved.
+Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,23 +14,29 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package registry
+package framework
 
 import (
-	"k8s.io/kubernetes/pkg/api/rest"
-	"k8s.io/kubernetes/pkg/runtime"
+	"fmt"
+	"math/rand"
+
 	"k8s.io/kubernetes/pkg/storage"
+
+	consulapi "github.com/hashicorp/consul/api"
 )
 
-// Creates a cacher on top of the given 'storageInterface'.
-func StorageWithCacher(
-	storageInterface storage.Interface,
-	capacity int,
-	objectType runtime.Object,
-	resourcePrefix string,
-	scopeStrategy rest.NamespaceScopedStrategy,
-	newListFunc func() runtime.Object) storage.Interface {
-	return storage.NewCacher(
-		storageInterface, capacity, storage.APIObjectVersioner{},
-		objectType, resourcePrefix, scopeStrategy, newListFunc)
+var consulClient *consulapi.Client
+
+func init() {
+	var err error
+	consulClient, err = consulapi.NewClient(consulapi.DefaultConfig())
+	if err != nil {
+		panic(fmt.Sprintf("Failed to instantiate consulClient: %s", err))
+	}
+}
+
+func WithConsulKey(store storage.Interface, f func(string)) {
+	prefix := fmt.Sprintf("/test-%d", rand.Int63())
+	defer consulClient.KV().Delete(prefix, nil)
+	f(prefix)
 }

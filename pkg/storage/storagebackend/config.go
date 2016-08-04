@@ -17,9 +17,10 @@ limitations under the License.
 package storagebackend
 
 const (
-	StorageTypeUnset = ""
-	StorageTypeETCD2 = "etcd2"
-	StorageTypeETCD3 = "etcd3"
+	StorageTypeUnset  = ""
+	StorageTypeETCD2  = "etcd2"
+	StorageTypeETCD3  = "etcd3"
+	StorageTypeConsul = "consul"
 )
 
 // Config is configuration for creating a storage backend.

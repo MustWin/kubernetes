@@ -35,6 +35,7 @@ import (
 	"k8s.io/kubernetes/pkg/labels"
 	"k8s.io/kubernetes/pkg/registry/generic"
 	"k8s.io/kubernetes/pkg/runtime"
+	"k8s.io/kubernetes/pkg/storage"
 	etcdstorage "k8s.io/kubernetes/pkg/storage/etcd"
 	"k8s.io/kubernetes/pkg/storage/etcd/etcdtest"
 	etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
@@ -973,5 +974,57 @@ func TestStoreWatch(t *testing.T) {
 		}
 
 		server.Terminate(t)
+	}
+}
+
+func newTestGenericStoreRegistry(t *testing.T, hasCacheEnabled bool) (*etcdtesting.EtcdTestServer, *Store) {
+	podPrefix := "/pods"
+	server := etcdtesting.NewEtcdTestClientServer(t)
+	strategy := &testRESTStrategy{api.Scheme, api.SimpleNameGenerator, true, false, true}
+	s := etcdstorage.NewEtcdStorage(server.Client, testapi.Default.StorageCodec(), etcdtest.PathPrefix(), false, etcdtest.DeserializationCacheSize)
+	if hasCacheEnabled {
+		config := storage.CacherConfig{
+			CacheCapacity:  10,
+			Storage:        s,
+			Versioner:      storage.APIObjectVersioner{},
+			Type:           &api.Pod{},
+			ResourcePrefix: podPrefix,
+			KeyFunc:        func(obj runtime.Object) (string, error) { return storage.NoNamespaceKeyFunc(podPrefix, obj) },
+			NewListFunc:    func() runtime.Object { return &api.PodList{} },
+		}
+		s = storage.NewCacherFromConfig(config)
+	}
+
+	return server, &Store{
+		NewFunc:           func() runtime.Object { return &api.Pod{} },
+		NewListFunc:       func() runtime.Object { return &api.PodList{} },
+		QualifiedResource: api.Resource("pods"),
+		CreateStrategy:    strategy,
+		UpdateStrategy:    strategy,
+		DeleteStrategy:    strategy,
+		KeyRootFunc: func(ctx api.Context) string {
+			return podPrefix
+		},
+		KeyFunc: func(ctx api.Context, id string) (string, error) {
+			if _, ok := api.NamespaceFrom(ctx); !ok {
+				return "", fmt.Errorf("namespace is required")
+			}
+			return path.Join(podPrefix, id), nil
+		},
+		ObjectNameFunc: func(obj runtime.Object) (string, error) { return obj.(*api.Pod).Name, nil },
+		PredicateFunc: func(label labels.Selector, field fields.Selector) generic.Matcher {
+			return &generic.SelectionPredicate{
+				Label: label,
+				Field: field,
+				GetAttrs: func(obj runtime.Object) (labels.Set, fields.Set, error) {
+					pod, ok := obj.(*api.Pod)
+					if !ok {
+						return nil, nil, fmt.Errorf("not a pod")
+					}
+					return labels.Set(pod.ObjectMeta.Labels), generic.ObjectMetaFieldsSet(pod.ObjectMeta, true), nil
+				},
+			}
+		},
+		Storage: s,
 	}
 }

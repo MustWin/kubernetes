@@ -35,7 +35,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-func TestCreate(t *testing.T) {
+func TestEtcdCreate(t *testing.T) {
 	client := framework.NewEtcdClient()
 	keysAPI := etcd.NewKeysAPI(client)
 	etcdStorage := etcdstorage.NewEtcdStorage(client, testapi.Default.Codec(), "", false, etcdtest.DeserializationCacheSize)
@@ -60,7 +60,7 @@ func TestCreate(t *testing.T) {
 	})
 }
 
-func TestGet(t *testing.T) {
+func TestEtcdGet(t *testing.T) {
 	client := framework.NewEtcdClient()
 	keysAPI := etcd.NewKeysAPI(client)
 	etcdStorage := etcdstorage.NewEtcdStorage(client, testapi.Default.Codec(), "", false, etcdtest.DeserializationCacheSize)
@@ -87,7 +87,7 @@ func TestGet(t *testing.T) {
 	})
 }
 
-func TestWriteTTL(t *testing.T) {
+func TestEtcdWriteTTL(t *testing.T) {
 	client := framework.NewEtcdClient()
 	keysAPI := etcd.NewKeysAPI(client)
 	etcdStorage := etcdstorage.NewEtcdStorage(client, testapi.Default.Codec(), "", false, etcdtest.DeserializationCacheSize)
@@ -142,7 +142,7 @@ func TestWriteTTL(t *testing.T) {
 	})
 }
 
-func TestWatch(t *testing.T) {
+func TestEtcdWatch(t *testing.T) {
 	client := framework.NewEtcdClient()
 	keysAPI := etcd.NewKeysAPI(client)
 	etcdStorage := etcdstorage.NewEtcdStorage(client, testapi.Default.Codec(), etcdtest.PathPrefix(), false, etcdtest.DeserializationCacheSize)

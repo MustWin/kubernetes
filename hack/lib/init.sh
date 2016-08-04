@@ -38,6 +38,7 @@ kube::log::install_errexit
 source "${KUBE_ROOT}/hack/lib/version.sh"
 source "${KUBE_ROOT}/hack/lib/golang.sh"
 source "${KUBE_ROOT}/hack/lib/etcd.sh"
+source "${KUBE_ROOT}/hack/lib/consul.sh"
 
 KUBE_GIT_UPSTREAM="${KUBE_GIT_UPSTREAM:-upstream}"
 

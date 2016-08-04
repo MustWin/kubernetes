@@ -14,24 +14,33 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package etcd
+package storage
 
 import (
 	"testing"
 
 	"k8s.io/kubernetes/pkg/api"
-	storagetesting "k8s.io/kubernetes/pkg/storage/testing"
+	"k8s.io/kubernetes/pkg/api/unversioned"
+	//storagetesting "k8s.io/kubernetes/pkg/storage/testing"
 )
+
+type TestResource struct {
+	unversioned.TypeMeta `json:",inline"`
+	api.ObjectMeta       `json:"metadata"`
+	Value                int `json:"value"`
+}
+
+func (obj *TestResource) GetObjectKind() unversioned.ObjectKind { return &obj.TypeMeta }
 
 func TestObjectVersioner(t *testing.T) {
 	v := APIObjectVersioner{}
-	if ver, err := v.ObjectResourceVersion(&storagetesting.TestResource{ObjectMeta: api.ObjectMeta{ResourceVersion: "5"}}); err != nil || ver != 5 {
+	if ver, err := v.ObjectResourceVersion(&TestResource{ObjectMeta: api.ObjectMeta{ResourceVersion: "5"}}); err != nil || ver != 5 {
 		t.Errorf("unexpected version: %d %v", ver, err)
 	}
-	if ver, err := v.ObjectResourceVersion(&storagetesting.TestResource{ObjectMeta: api.ObjectMeta{ResourceVersion: "a"}}); err == nil || ver != 0 {
+	if ver, err := v.ObjectResourceVersion(&TestResource{ObjectMeta: api.ObjectMeta{ResourceVersion: "a"}}); err == nil || ver != 0 {
 		t.Errorf("unexpected version: %d %v", ver, err)
 	}
-	obj := &storagetesting.TestResource{ObjectMeta: api.ObjectMeta{ResourceVersion: "a"}}
+	obj := &TestResource{ObjectMeta: api.ObjectMeta{ResourceVersion: "a"}}
 	if err := v.UpdateObject(obj, 5); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -41,8 +50,8 @@ func TestObjectVersioner(t *testing.T) {
 }
 
 func TestCompareResourceVersion(t *testing.T) {
-	five := &storagetesting.TestResource{ObjectMeta: api.ObjectMeta{ResourceVersion: "5"}}
-	six := &storagetesting.TestResource{ObjectMeta: api.ObjectMeta{ResourceVersion: "6"}}
+	five := &TestResource{ObjectMeta: api.ObjectMeta{ResourceVersion: "5"}}
+	six := &TestResource{ObjectMeta: api.ObjectMeta{ResourceVersion: "6"}}
 
 	versioner := APIObjectVersioner{}
 

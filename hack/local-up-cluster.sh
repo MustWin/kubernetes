@@ -40,6 +40,7 @@ WAIT_FOR_URL_API_SERVER=${WAIT_FOR_URL_API_SERVER:-10}
 ENABLE_DAEMON=${ENABLE_DAEMON:-false}
 HOSTNAME_OVERRIDE=${HOSTNAME_OVERRIDE:-"127.0.0.1"}
 CLOUD_PROVIDER=${CLOUD_PROVIDER:-""}
+KUBE_STORAGE=${KUBE_STORAGE:-"etcd2"}
 
 if [ "$(id -u)" != "0" ]; then
     echo "WARNING : This script MAY be run as root for docker socket / iptables functionality; if failures occur, retry as root." 2>&1
@@ -226,11 +227,22 @@ cleanup()
   [[ -n "${SCHEDULER_PID-}" ]] && SCHEDULER_PIDS=$(pgrep -P ${SCHEDULER_PID} ; ps -o pid= -p ${SCHEDULER_PID})
   [[ -n "${SCHEDULER_PIDS-}" ]] && sudo kill ${SCHEDULER_PIDS}
 
-  # Check if the etcd is still running
-  [[ -n "${ETCD_PID-}" ]] && kube::etcd::stop
-  [[ -n "${ETCD_DIR-}" ]] && kube::etcd::clean_etcd_dir
+  if [[ "KUBE_STORAGE" = "consul" ]]; then
+    # Check if the etcd is still running
+    [[ -n "${CONSUL_PID-}" ]] && kube::consul::stop
+    [[ -n "${CONSUL_DIR-}" ]] && kube::consul::clean_consul_dir
+  else
+    # Check if the etcd is still running
+    [[ -n "${ETCD_PID-}" ]] && kube::etcd::stop
+    [[ -n "${ETCD_DIR-}" ]] && kube::etcd::clean_etcd_dir
+  fi
 
   exit 0
+}
+
+function startConsul {
+    echo "Starting consul"
+    kube::consul::start
 }
 
 function startETCD {
@@ -251,9 +263,9 @@ function set_service_accounts {
 function start_apiserver {
     # Admission Controllers to invoke prior to persisting objects in cluster
     if [[ -z "${ALLOW_SECURITY_CONTEXT}" ]]; then
-      ADMISSION_CONTROL=NamespaceLifecycle,LimitRanger,SecurityContextDeny,ServiceAccount,ResourceQuota
+      ADMISSION_CONTROL=NamespaceLifecycle,LimitRanger,SecurityContextDeny,ResourceQuota
     else
-      ADMISSION_CONTROL=NamespaceLifecycle,LimitRanger,ServiceAccount,ResourceQuota
+      ADMISSION_CONTROL=NamespaceLifecycle,LimitRanger,ResourceQuota
     fi
     # This is the default dir and filename where the apiserver will generate a self-signed cert
     # which should be able to be used as the CA to verify itself
@@ -269,8 +281,11 @@ function start_apiserver {
       runtime_config="--runtime-config=${RUNTIME_CONFIG}"
     fi
 
+    echo "Using storage-backend: ${KUBE_STORAGE}"
+
     APISERVER_LOG=/tmp/kube-apiserver.log
-    sudo -E "${GO_OUT}/hyperkube" apiserver ${priv_arg} ${runtime_config}\
+    if [[ "${KUBE_STORAGE}" == "consul" ]]; then
+      sudo -E "${GO_OUT}/hyperkube" apiserver ${priv_arg} ${runtime_config}\
       --v=${LOG_LEVEL} \
       --cert-dir="${CERT_DIR}" \
       --service-account-key-file="${SERVICE_ACCOUNT_KEY}" \
@@ -279,10 +294,28 @@ function start_apiserver {
       --insecure-bind-address="${API_HOST}" \
       --insecure-port="${API_PORT}" \
       --advertise-address="${API_HOST}" \
+      --storage-backend="${KUBE_STORAGE}" \
+      --consul-servers="http://${CONSUL_HOST}:${CONSUL_PORT}" \
+      --service-cluster-ip-range="10.0.0.0/24" \
+      --cloud-provider="${CLOUD_PROVIDER}" \
+      --cors-allowed-origins="${API_CORS_ALLOWED_ORIGINS}" >"${APISERVER_LOG}" 2>&1 &
+    else
+      sudo -E "${GO_OUT}/hyperkube" apiserver ${priv_arg} ${runtime_config}\
+      --v=${LOG_LEVEL} \
+      --cert-dir="${CERT_DIR}" \
+      --service-account-key-file="${SERVICE_ACCOUNT_KEY}" \
+      --service-account-lookup="${SERVICE_ACCOUNT_LOOKUP}" \
+      --admission-control="${ADMISSION_CONTROL}" \
+      --bind-address="${API_BIND_ADDR}" \
+      --insecure-bind-address="${API_HOST}" \
+      --insecure-port="${API_PORT}" \
+      --advertise-address="${API_HOST}" \
+      --storage-backend="${KUBE_STORAGE}" \
       --etcd-servers="http://${ETCD_HOST}:${ETCD_PORT}" \
       --service-cluster-ip-range="10.0.0.0/24" \
       --cloud-provider="${CLOUD_PROVIDER}" \
       --cors-allowed-origins="${API_CORS_ALLOWED_ORIGINS}" >"${APISERVER_LOG}" 2>&1 &
+    fi
     APISERVER_PID=$!
 
     # Wait for kube-apiserver to come up before launching the rest of the components.
@@ -479,7 +512,13 @@ if [[ "${ENABLE_DAEMON}" = false ]]; then
 trap cleanup EXIT
 fi
 echo "Starting services now!"
-startETCD
+
+if [[ ${KUBE_STORAGE} = "consul" ]]; then
+  startConsul
+else
+  startETCD
+fi
+
 set_service_accounts
 start_apiserver
 start_controller_manager

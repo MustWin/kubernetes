@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package etcd
+package storage
 
 import (
 	"strconv"
@@ -22,7 +22,6 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/meta"
 	"k8s.io/kubernetes/pkg/runtime"
-	"k8s.io/kubernetes/pkg/storage"
 )
 
 // APIObjectVersioner implements versioning and extracting etcd node information
@@ -70,18 +69,18 @@ func (a APIObjectVersioner) ObjectResourceVersion(obj runtime.Object) (uint64, e
 	return strconv.ParseUint(version, 10, 64)
 }
 
-// APIObjectVersioner implements Versioner
-var Versioner storage.Versioner = APIObjectVersioner{}
+// APIObjectVersioner implements storage.Versioner
+//var Versioner Versioner = APIObjectVersioner{}
 
 // CompareResourceVersion compares etcd resource versions.  Outside this API they are all strings,
 // but etcd resource versions are special, they're actually ints, so we can easily compare them.
 func (a APIObjectVersioner) CompareResourceVersion(lhs, rhs runtime.Object) int {
-	lhsVersion, err := Versioner.ObjectResourceVersion(lhs)
+	lhsVersion, err := a.ObjectResourceVersion(lhs)
 	if err != nil {
 		// coder error
 		panic(err)
 	}
-	rhsVersion, err := Versioner.ObjectResourceVersion(rhs)
+	rhsVersion, err := a.ObjectResourceVersion(rhs)
 	if err != nil {
 		// coder error
 		panic(err)

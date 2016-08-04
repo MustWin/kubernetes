@@ -314,7 +314,8 @@ func (s *ServerRunOptions) AddFlags(fs *pflag.FlagSet) {
 	fs.Var(&s.ServiceNodePortRange, "service-node-ports", "Deprecated: see --service-node-port-range instead.")
 	fs.MarkDeprecated("service-node-ports", "see --service-node-port-range instead.")
 
-	fs.StringVar(&s.StorageConfig.Type, "storage-backend", s.StorageConfig.Type, "The storage backend for persistence. Options: 'etcd2' (default), 'etcd3'.")
+	fs.StringVar(&s.StorageConfig.Type, "storage-backend", s.StorageConfig.Type, "The storage backend for persistence. Options: 'etcd2' (default), 'etcd3', 'consul'.")
+	fs.StringSliceVar(&s.StorageConfig.ServerList, "consul-servers", s.StorageConfig.ServerList, "List of Consul servers to connect with (http://ip:port), comma separated.")
 	fs.StringSliceVar(&s.StorageConfig.ServerList, "etcd-servers", s.StorageConfig.ServerList, "List of etcd servers to connect with (http://ip:port), comma separated.")
 	fs.StringVar(&s.StorageConfig.Prefix, "etcd-prefix", s.StorageConfig.Prefix, "The prefix for all resource paths in etcd.")
 	fs.StringVar(&s.StorageConfig.KeyFile, "etcd-keyfile", s.StorageConfig.KeyFile, "SSL key file used to secure etcd communication")

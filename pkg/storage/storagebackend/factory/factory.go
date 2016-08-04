@@ -35,6 +35,8 @@ func Create(c storagebackend.Config, codec runtime.Codec) (storage.Interface, er
 		// - Honor "https" scheme to support secure connection in gRPC.
 		// - Support non-quorum read.
 		return newETCD3Storage(c, codec)
+	case storagebackend.StorageTypeConsul:
+		return newConsulStorage(c, codec)
 	default:
 		return nil, fmt.Errorf("unknown storage type: %s", c.Type)
 	}

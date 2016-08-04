@@ -47,7 +47,7 @@ func NewEtcdStorage(client etcd.Client, codec runtime.Codec, prefix string, quor
 		etcdMembersAPI: etcd.NewMembersAPI(client),
 		etcdKeysAPI:    etcd.NewKeysAPI(client),
 		codec:          codec,
-		versioner:      APIObjectVersioner{},
+		versioner:      storage.APIObjectVersioner{},
 		copier:         api.Scheme,
 		pathPrefix:     path.Join("/", prefix),
 		quorum:         quorum,

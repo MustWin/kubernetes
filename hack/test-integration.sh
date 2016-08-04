@@ -50,6 +50,8 @@ cleanup() {
 runTests() {
   kube::log::status "Starting etcd instance"
   kube::etcd::start
+  kube::log::status "Starting consul instance"
+  kube::consul::start
   kube::log::status "Running integration test cases"
 
   # TODO: Re-enable race detection when we switch to a thread-safe etcd client
@@ -80,6 +82,16 @@ checkEtcdOnPath() {
 }
 
 checkEtcdOnPath
+
+checkConsulOnPath() {
+  kube::log::status "Checking consul is on PATH"
+  which consul && return
+  kube::log::status "Cannot find consul, cannot run integration tests."
+  kube::log::status "Please see docs/devel/testing.md for instructions."
+  return 1
+}
+
+checkConsulOnPath
 
 "${KUBE_ROOT}/hack/build-go.sh" "$@" cmd/integration
 

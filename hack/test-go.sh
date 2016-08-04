@@ -235,7 +235,7 @@ runTests() {
       ${KUBE_RACE} ${KUBE_TIMEOUT} "${@+${@/#/${KUBE_GO_PACKAGE}/}}" \
      "${testargs[@]:+${testargs[@]}}" \
      | tee ${junit_filename_prefix:+"${junit_filename_prefix}.stdout"} \
-     | grep "${go_test_grep_pattern}" && rc=$? || rc=$?
+     | grep -a "${go_test_grep_pattern}" && rc=$? || rc=$?
     produceJUnitXMLReport "${junit_filename_prefix}"
     return ${rc}
   fi
@@ -319,7 +319,6 @@ apiVersionsCount=${#apiVersions[@]}
 for (( i=0; i<${apiVersionsCount}; i++ )); do
   apiVersion=${apiVersions[i]}
   echo "Running tests for APIVersion: $apiVersion"
-  # KUBE_TEST_API sets the version of each group to be tested.
   KUBE_TEST_API="${apiVersion}" runTests "$@"
 done
 

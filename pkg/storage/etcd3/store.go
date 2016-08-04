@@ -29,7 +29,6 @@ import (
 	"k8s.io/kubernetes/pkg/conversion"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/storage"
-	"k8s.io/kubernetes/pkg/storage/etcd"
 	"k8s.io/kubernetes/pkg/watch"
 
 	"github.com/coreos/etcd/clientv3"
@@ -63,7 +62,7 @@ func New(c *clientv3.Client, codec runtime.Codec, prefix string) storage.Interfa
 }
 
 func newStore(c *clientv3.Client, codec runtime.Codec, prefix string) *store {
-	versioner := etcd.APIObjectVersioner{}
+	versioner := storage.APIObjectVersioner{}
 	return &store{
 		client:     c,
 		versioner:  versioner,
