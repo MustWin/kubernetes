@@ -27,7 +27,6 @@ import (
 	"k8s.io/kubernetes/pkg/registry/generic"
 	"k8s.io/kubernetes/pkg/registry/registrytest"
 	"k8s.io/kubernetes/pkg/storage/etcd/etcdtest"
-	//etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
 	storagefactory "k8s.io/kubernetes/pkg/storage/storagebackend/factory/testing"
 	"k8s.io/kubernetes/pkg/util/diff"
 )

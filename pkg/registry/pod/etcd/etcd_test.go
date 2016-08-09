@@ -33,12 +33,21 @@ import (
 	"k8s.io/kubernetes/pkg/securitycontext"
 	"k8s.io/kubernetes/pkg/storage"
 	"k8s.io/kubernetes/pkg/storage/etcd/etcdtest"
-	etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
+	storagefactory "k8s.io/kubernetes/pkg/storage/storagebackend/factory/testing"
 	"k8s.io/kubernetes/pkg/util/diff"
 )
 
-func newStorage(t *testing.T) (*REST, *BindingREST, *StatusREST, *etcdtesting.EtcdTestServer) {
-	etcdStorage, server := registrytest.NewEtcdStorage(t, "")
+var factory storagefactory.TestServerFactory
+
+func TestMain(m *testing.M) {
+	storagefactory.RunTestsForStorageFactories(func(fac storagefactory.TestServerFactory) int {
+		factory = fac
+		return m.Run()
+	})
+}
+
+func newStorage(t *testing.T) (*REST, *BindingREST, *StatusREST, storagefactory.TestClientServer) {
+	etcdStorage, server := registrytest.NewStorage(t, factory, "")
 	restOptions := generic.RESTOptions{Storage: etcdStorage, Decorator: generic.UndecoratedStorage, DeleteCollectionWorkers: 3}
 	storage := NewStorage(restOptions, nil, nil)
 	return storage.Pod, storage.Binding, storage.Status, server
@@ -142,8 +151,8 @@ func (f FailDeletionStorage) Delete(ctx context.Context, key string, out runtime
 	return storage.NewKeyNotFoundError(key, 0)
 }
 
-func newFailDeleteStorage(t *testing.T, called *bool) (*REST, *etcdtesting.EtcdTestServer) {
-	etcdStorage, server := registrytest.NewEtcdStorage(t, "")
+func newFailDeleteStorage(t *testing.T, called *bool) (*REST, storagefactory.TestClientServer) {
+	etcdStorage, server := registrytest.NewStorage(t, factory, "")
 	failDeleteStorage := FailDeletionStorage{etcdStorage, called}
 	restOptions := generic.RESTOptions{Storage: failDeleteStorage, Decorator: generic.UndecoratedStorage, DeleteCollectionWorkers: 3}
 	storage := NewStorage(restOptions, nil, nil)

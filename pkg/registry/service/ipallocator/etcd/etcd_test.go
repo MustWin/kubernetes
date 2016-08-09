@@ -28,13 +28,22 @@ import (
 	"k8s.io/kubernetes/pkg/registry/service/ipallocator"
 	"k8s.io/kubernetes/pkg/storage"
 	"k8s.io/kubernetes/pkg/storage/etcd/etcdtest"
-	etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
+	storagefactory "k8s.io/kubernetes/pkg/storage/storagebackend/factory/testing"
 
 	"golang.org/x/net/context"
 )
 
-func newStorage(t *testing.T) (*etcdtesting.EtcdTestServer, ipallocator.Interface, allocator.Interface, storage.Interface) {
-	etcdStorage, server := registrytest.NewEtcdStorage(t, "")
+var factory storagefactory.TestServerFactory
+
+func TestMain(m *testing.M) {
+	storagefactory.RunTestsForStorageFactories(func(fac storagefactory.TestServerFactory) int {
+		factory = fac
+		return m.Run()
+	})
+}
+
+func newStorage(t *testing.T) (storagefactory.TestClientServer, ipallocator.Interface, allocator.Interface, storage.Interface) {
+	etcdStorage, server := registrytest.NewStorage(t, factory, "")
 	_, cidr, err := net.ParseCIDR("192.168.1.0/24")
 	if err != nil {
 		t.Fatal(err)

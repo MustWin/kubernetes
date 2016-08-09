@@ -27,8 +27,17 @@ import (
 	"k8s.io/kubernetes/pkg/registry/generic"
 	"k8s.io/kubernetes/pkg/registry/registrytest"
 	"k8s.io/kubernetes/pkg/runtime"
-	etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
+	storagefactory "k8s.io/kubernetes/pkg/storage/storagebackend/factory/testing"
 )
+
+var factory storagefactory.TestServerFactory
+
+func TestMain(m *testing.M) {
+	storagefactory.RunTestsForStorageFactories(func(fac storagefactory.TestServerFactory) int {
+		factory = fac
+		return m.Run()
+	})
+}
 
 type fakeConnectionInfoGetter struct {
 }
@@ -37,8 +46,8 @@ func (fakeConnectionInfoGetter) GetConnectionInfo(ctx api.Context, nodeName stri
 	return "http", 12345, nil, nil
 }
 
-func newStorage(t *testing.T) (*REST, *etcdtesting.EtcdTestServer) {
-	etcdStorage, server := registrytest.NewEtcdStorage(t, "")
+func newStorage(t *testing.T) (*REST, storagefactory.TestClientServer) {
+	etcdStorage, server := registrytest.NewStorage(t, factory, "")
 	restOptions := generic.RESTOptions{Storage: etcdStorage, Decorator: generic.UndecoratedStorage, DeleteCollectionWorkers: 1}
 	storage := NewStorage(restOptions, fakeConnectionInfoGetter{}, nil)
 	return storage.Node, server

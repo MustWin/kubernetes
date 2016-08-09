@@ -23,10 +23,21 @@ import (
 	"k8s.io/kubernetes/pkg/api/errors"
 	"k8s.io/kubernetes/pkg/registry/generic/registry"
 	"k8s.io/kubernetes/pkg/registry/registrytest"
+	storagefactory "k8s.io/kubernetes/pkg/storage/storagebackend/factory/testing"
 )
 
+var factory storagefactory.TestServerFactory
+
+func TestMain(m *testing.M) {
+	storagefactory.RunTestsForStorageFactories(func(fac storagefactory.TestServerFactory) int {
+		factory = fac
+		return m.Run()
+	})
+}
+
 func TestPodLogValidates(t *testing.T) {
-	etcdStorage, _ := registrytest.NewEtcdStorage(t, "")
+	etcdStorage, server := registrytest.NewStorage(t, factory, "")
+	defer server.Terminate(t)
 	store := &registry.Store{
 		Storage: etcdStorage,
 	}

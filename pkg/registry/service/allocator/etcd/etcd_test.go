@@ -24,13 +24,22 @@ import (
 	"k8s.io/kubernetes/pkg/registry/registrytest"
 	"k8s.io/kubernetes/pkg/registry/service/allocator"
 	"k8s.io/kubernetes/pkg/storage/etcd/etcdtest"
-	etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
+	storagefactory "k8s.io/kubernetes/pkg/storage/storagebackend/factory/testing"
 
 	"golang.org/x/net/context"
 )
 
-func newStorage(t *testing.T) (*Etcd, *etcdtesting.EtcdTestServer, allocator.Interface) {
-	etcdStorage, server := registrytest.NewEtcdStorage(t, "")
+var factory storagefactory.TestServerFactory
+
+func TestMain(m *testing.M) {
+	storagefactory.RunTestsForStorageFactories(func(fac storagefactory.TestServerFactory) int {
+		factory = fac
+		return m.Run()
+	})
+}
+
+func newStorage(t *testing.T) (*Etcd, storagefactory.TestClientServer, allocator.Interface) {
+	etcdStorage, server := registrytest.NewStorage(t, factory, "")
 	mem := allocator.NewAllocationMap(100, "rangeSpecValue")
 	etcd := NewEtcd(mem, "/ranges/serviceips", api.Resource("serviceipallocations"), etcdStorage)
 	return etcd, server, mem
