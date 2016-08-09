@@ -27,8 +27,8 @@ import (
 func RunTestsForStorageFactories(iterFn func(TestServerFactory) int) {
 	FactoryTypesList := os.Getenv("KUBE_STORAGE")
 	if FactoryTypesList == "" {
-		//FactoryTypesList = "etcd,etcd3,consul"
-		FactoryTypesList = "consul"
+		//FactoryTypesList = "etcd2,etcd3,consul"
+		FactoryTypesList = "etcd2,consul"
 	}
 	types := strings.Split(FactoryTypesList, ",")
 	retCodes := make([]int, len(types))
@@ -53,8 +53,8 @@ func RunTestsForStorageFactories(iterFn func(TestServerFactory) int) {
 // Create creates a storage backend based on given config.
 func GetFactory(Type string) (TestServerFactory, error) {
 	switch Type {
-	//case storagebackend.StorageTypeUnset, storagebackend.StorageTypeETCD2:
-		//return newETCD2Storage(c, codec)
+	case storagebackend.StorageTypeUnset, storagebackend.StorageTypeETCD2:
+		return NewETCD2TestServerFactory()
 	//case storagebackend.StorageTypeETCD3:
 		// TODO: We have the following features to implement:
 		// - Support secure connection by using key, cert, and CA files.
