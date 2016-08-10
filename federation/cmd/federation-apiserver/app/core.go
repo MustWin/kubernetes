@@ -27,11 +27,11 @@ import (
 	"k8s.io/kubernetes/federation/apis/core/v1"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/rest"
-	serviceetcd "k8s.io/kubernetes/pkg/registry/service/etcd"
+	servicestg "k8s.io/kubernetes/pkg/registry/service/storage"
 )
 
 func installCoreAPIs(s *genericoptions.ServerRunOptions, g *genericapiserver.GenericAPIServer, f genericapiserver.StorageFactory) {
-	serviceStore, serviceStatusStorage := serviceetcd.NewREST(createRESTOptionsOrDie(s, g, f, api.Resource("service")))
+	serviceStore, serviceStatusStorage := servicestg.NewREST(createRESTOptionsOrDie(s, g, f, api.Resource("service")))
 	coreResources := map[string]rest.Storage{
 		"services":        serviceStore,
 		"services/status": serviceStatusStorage,

@@ -36,10 +36,10 @@ func TestMain(m *testing.M) {
 }
 
 func TestPodLogValidates(t *testing.T) {
-	etcdStorage, server := registrytest.NewStorage(t, factory, "")
+	internalStorage, server := registrytest.NewStorage(t, factory, "")
 	defer server.Terminate(t)
 	store := &registry.Store{
-		Storage: etcdStorage,
+		Storage: internalStorage,
 	}
 	logRest := &LogREST{Store: store, KubeletConn: nil}
 

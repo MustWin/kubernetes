@@ -47,14 +47,14 @@ import (
 	"k8s.io/kubernetes/pkg/master"
 	"k8s.io/kubernetes/pkg/registry/cachesize"
 	"k8s.io/kubernetes/pkg/registry/clusterrole"
-	clusterroleetcd "k8s.io/kubernetes/pkg/registry/clusterrole/etcd"
+	clusterrolestg "k8s.io/kubernetes/pkg/registry/clusterrole/storage"
 	"k8s.io/kubernetes/pkg/registry/clusterrolebinding"
-	clusterrolebindingetcd "k8s.io/kubernetes/pkg/registry/clusterrolebinding/etcd"
+	clusterrolebindingstg "k8s.io/kubernetes/pkg/registry/clusterrolebinding/storage"
 	"k8s.io/kubernetes/pkg/registry/generic"
 	"k8s.io/kubernetes/pkg/registry/role"
-	roleetcd "k8s.io/kubernetes/pkg/registry/role/etcd"
+	rolestg "k8s.io/kubernetes/pkg/registry/role/storage"
 	"k8s.io/kubernetes/pkg/registry/rolebinding"
-	rolebindingetcd "k8s.io/kubernetes/pkg/registry/rolebinding/etcd"
+	rolebindingstg "k8s.io/kubernetes/pkg/registry/rolebinding/storage"
 	"k8s.io/kubernetes/pkg/serviceaccount"
 )
 
@@ -227,10 +227,10 @@ func Run(s *options.APIServer) error {
 		}
 
 		// For initial bootstrapping go directly to etcd to avoid privillege escalation check.
-		s.AuthorizationConfig.RBACRoleRegistry = role.NewRegistry(roleetcd.NewREST(mustGetRESTOptions("roles")))
-		s.AuthorizationConfig.RBACRoleBindingRegistry = rolebinding.NewRegistry(rolebindingetcd.NewREST(mustGetRESTOptions("rolebindings")))
-		s.AuthorizationConfig.RBACClusterRoleRegistry = clusterrole.NewRegistry(clusterroleetcd.NewREST(mustGetRESTOptions("clusterroles")))
-		s.AuthorizationConfig.RBACClusterRoleBindingRegistry = clusterrolebinding.NewRegistry(clusterrolebindingetcd.NewREST(mustGetRESTOptions("clusterrolebindings")))
+		s.AuthorizationConfig.RBACRoleRegistry = role.NewRegistry(rolestg.NewREST(mustGetRESTOptions("roles")))
+		s.AuthorizationConfig.RBACRoleBindingRegistry = rolebinding.NewRegistry(rolebindingstg.NewREST(mustGetRESTOptions("rolebindings")))
+		s.AuthorizationConfig.RBACClusterRoleRegistry = clusterrole.NewRegistry(clusterrolestg.NewREST(mustGetRESTOptions("clusterroles")))
+		s.AuthorizationConfig.RBACClusterRoleBindingRegistry = clusterrolebinding.NewRegistry(clusterrolebindingstg.NewREST(mustGetRESTOptions("clusterrolebindings")))
 	}
 
 	authorizer, err := apiserver.NewAuthorizerFromAuthorizationConfig(authorizationModeNames, s.AuthorizationConfig)

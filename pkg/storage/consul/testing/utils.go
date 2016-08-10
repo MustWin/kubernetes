@@ -328,6 +328,7 @@ func NewTestClientServer(t *testing.T, filePath string) (*ConsulSharedTestServer
 	server, index, err := connectSharedConsulServer(t, filePath)
 	if err != nil {
 		t.Errorf("Unexpected failure starting consul server %#v", err)
+		//return nil, err
 	}
 
 	// TODO: specify rcp-addr

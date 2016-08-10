@@ -36,13 +36,20 @@ import (
 	"k8s.io/kubernetes/pkg/registry/generic"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/storage"
-	etcdstorage "k8s.io/kubernetes/pkg/storage/etcd"
-	"k8s.io/kubernetes/pkg/storage/etcd/etcdtest"
-	etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
+	storagefactory "k8s.io/kubernetes/pkg/storage/storagebackend/factory/testing"
 	storagetesting "k8s.io/kubernetes/pkg/storage/testing"
 	"k8s.io/kubernetes/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/util/validation/field"
 )
+
+var factory storagefactory.TestServerFactory
+
+func TestMain(m *testing.M) {
+	storagefactory.RunTestsForStorageFactories(func(fac storagefactory.TestServerFactory) int {
+		factory = fac
+		return m.Run()
+	})
+}
 
 type testRESTStrategy struct {
 	runtime.ObjectTyper
@@ -89,10 +96,16 @@ func hasCreated(t *testing.T, pod *api.Pod) func(runtime.Object) bool {
 	}
 }
 
-func NewTestGenericStoreRegistry(t *testing.T) (*etcdtesting.EtcdTestServer, *Store) {
+func NewTestGenericStoreRegistry(t *testing.T) (storagefactory.TestClientServer, *Store) {
 	podPrefix := "/pods"
-	server := etcdtesting.NewEtcdTestClientServer(t)
-	s := etcdstorage.NewEtcdStorage(server.Client, testapi.Default.StorageCodec(), etcdtest.PathPrefix(), false, etcdtest.DeserializationCacheSize)
+	server, err := factory.NewTestClientServer(t)
+	if err != nil {
+		t.Fatalf("Unexpected error %v", err)
+	}
+	s, err := server.CreateStorage(t, testapi.Default.StorageCodec())
+	if err != nil {
+		t.Fatalf("Unexpected error %v", err)
+	}
 	strategy := &testRESTStrategy{api.Scheme, api.SimpleNameGenerator, true, false, true}
 
 	return server, &Store{
@@ -977,11 +990,17 @@ func TestStoreWatch(t *testing.T) {
 	}
 }
 
-func newTestGenericStoreRegistry(t *testing.T, hasCacheEnabled bool) (*etcdtesting.EtcdTestServer, *Store) {
+func newTestGenericStoreRegistry(t *testing.T, hasCacheEnabled bool) (storagefactory.TestClientServer, *Store) {
 	podPrefix := "/pods"
-	server := etcdtesting.NewEtcdTestClientServer(t)
+	server, err := factory.NewTestClientServer(t)
+	if err != nil {
+		t.Fatalf("Unexpected error %v", err)
+	}
 	strategy := &testRESTStrategy{api.Scheme, api.SimpleNameGenerator, true, false, true}
-	s := etcdstorage.NewEtcdStorage(server.Client, testapi.Default.StorageCodec(), etcdtest.PathPrefix(), false, etcdtest.DeserializationCacheSize)
+	s, err := server.CreateStorage(t, testapi.Default.StorageCodec())
+	if err != nil {
+		t.Fatalf("Unexpected error %v", err)
+	}
 	if hasCacheEnabled {
 		config := storage.CacherConfig{
 			CacheCapacity:  10,

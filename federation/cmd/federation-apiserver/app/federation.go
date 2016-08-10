@@ -27,11 +27,11 @@ import (
 	genericoptions "k8s.io/kubernetes/pkg/genericapiserver/options"
 
 	_ "k8s.io/kubernetes/federation/apis/federation/install"
-	clusteretcd "k8s.io/kubernetes/federation/registry/cluster/etcd"
+	clusterstg "k8s.io/kubernetes/federation/registry/cluster/storage"
 )
 
 func installFederationAPIs(s *genericoptions.ServerRunOptions, g *genericapiserver.GenericAPIServer, f genericapiserver.StorageFactory) {
-	clusterStorage, clusterStatusStorage := clusteretcd.NewREST(createRESTOptionsOrDie(s, g, f, federation.Resource("clusters")))
+	clusterStorage, clusterStatusStorage := clusterstg.NewREST(createRESTOptionsOrDie(s, g, f, federation.Resource("clusters")))
 	federationResources := map[string]rest.Storage{
 		"clusters":        clusterStorage,
 		"clusters/status": clusterStatusStorage,

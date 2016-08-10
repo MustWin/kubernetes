@@ -54,60 +54,60 @@ import (
 	kubeletclient "k8s.io/kubernetes/pkg/kubelet/client"
 	"k8s.io/kubernetes/pkg/master/ports"
 	"k8s.io/kubernetes/pkg/registry/clusterrole"
-	clusterroleetcd "k8s.io/kubernetes/pkg/registry/clusterrole/etcd"
+	clusterrolestg "k8s.io/kubernetes/pkg/registry/clusterrole/storage"
 	clusterrolepolicybased "k8s.io/kubernetes/pkg/registry/clusterrole/policybased"
 	"k8s.io/kubernetes/pkg/registry/clusterrolebinding"
-	clusterrolebindingetcd "k8s.io/kubernetes/pkg/registry/clusterrolebinding/etcd"
+	clusterrolebindingstg "k8s.io/kubernetes/pkg/registry/clusterrolebinding/storage"
 	clusterrolebindingpolicybased "k8s.io/kubernetes/pkg/registry/clusterrolebinding/policybased"
 	"k8s.io/kubernetes/pkg/registry/componentstatus"
-	configmapetcd "k8s.io/kubernetes/pkg/registry/configmap/etcd"
-	controlleretcd "k8s.io/kubernetes/pkg/registry/controller/etcd"
-	deploymentetcd "k8s.io/kubernetes/pkg/registry/deployment/etcd"
+	configmapstg "k8s.io/kubernetes/pkg/registry/configmap/storage"
+	controllerstg "k8s.io/kubernetes/pkg/registry/controller/storage"
+	deploymentstg "k8s.io/kubernetes/pkg/registry/deployment/storage"
 	"k8s.io/kubernetes/pkg/registry/endpoint"
-	endpointsetcd "k8s.io/kubernetes/pkg/registry/endpoint/etcd"
-	eventetcd "k8s.io/kubernetes/pkg/registry/event/etcd"
-	expcontrolleretcd "k8s.io/kubernetes/pkg/registry/experimental/controller/etcd"
+	endpointstg "k8s.io/kubernetes/pkg/registry/endpoint/storage"
+	eventstg "k8s.io/kubernetes/pkg/registry/event/storage"
+	expcontrollerstg "k8s.io/kubernetes/pkg/registry/experimental/controller/storage"
 	"k8s.io/kubernetes/pkg/registry/generic"
-	ingressetcd "k8s.io/kubernetes/pkg/registry/ingress/etcd"
-	jobetcd "k8s.io/kubernetes/pkg/registry/job/etcd"
-	limitrangeetcd "k8s.io/kubernetes/pkg/registry/limitrange/etcd"
+	ingressstg "k8s.io/kubernetes/pkg/registry/ingress/storage"
+	jobstg "k8s.io/kubernetes/pkg/registry/job/storage"
+	limitrangestg "k8s.io/kubernetes/pkg/registry/limitrange/storage"
 	"k8s.io/kubernetes/pkg/registry/namespace"
-	namespaceetcd "k8s.io/kubernetes/pkg/registry/namespace/etcd"
-	networkpolicyetcd "k8s.io/kubernetes/pkg/registry/networkpolicy/etcd"
+	namespacestg "k8s.io/kubernetes/pkg/registry/namespace/storage"
+	networkpolicystg "k8s.io/kubernetes/pkg/registry/networkpolicy/storage"
 	"k8s.io/kubernetes/pkg/registry/node"
-	nodeetcd "k8s.io/kubernetes/pkg/registry/node/etcd"
-	pvetcd "k8s.io/kubernetes/pkg/registry/persistentvolume/etcd"
-	pvcetcd "k8s.io/kubernetes/pkg/registry/persistentvolumeclaim/etcd"
-	petsetetcd "k8s.io/kubernetes/pkg/registry/petset/etcd"
-	podetcd "k8s.io/kubernetes/pkg/registry/pod/etcd"
-	poddisruptionbudgetetcd "k8s.io/kubernetes/pkg/registry/poddisruptionbudget/etcd"
-	pspetcd "k8s.io/kubernetes/pkg/registry/podsecuritypolicy/etcd"
-	podtemplateetcd "k8s.io/kubernetes/pkg/registry/podtemplate/etcd"
-	replicasetetcd "k8s.io/kubernetes/pkg/registry/replicaset/etcd"
-	resourcequotaetcd "k8s.io/kubernetes/pkg/registry/resourcequota/etcd"
+	nodestg "k8s.io/kubernetes/pkg/registry/node/storage"
+	pvstg "k8s.io/kubernetes/pkg/registry/persistentvolume/storage"
+	pvcstg "k8s.io/kubernetes/pkg/registry/persistentvolumeclaim/storage"
+	petsetstg "k8s.io/kubernetes/pkg/registry/petset/storage"
+	podstg "k8s.io/kubernetes/pkg/registry/pod/storage"
+	poddisruptionbudgetstg "k8s.io/kubernetes/pkg/registry/poddisruptionbudget/storage"
+	pspstg "k8s.io/kubernetes/pkg/registry/podsecuritypolicy/storage"
+	podtemplatestg "k8s.io/kubernetes/pkg/registry/podtemplate/storage"
+	replicasetstg "k8s.io/kubernetes/pkg/registry/replicaset/storage"
+	resourcequotastg "k8s.io/kubernetes/pkg/registry/resourcequota/storage"
 	"k8s.io/kubernetes/pkg/registry/role"
-	roleetcd "k8s.io/kubernetes/pkg/registry/role/etcd"
+	rolestg "k8s.io/kubernetes/pkg/registry/role/storage"
 	rolepolicybased "k8s.io/kubernetes/pkg/registry/role/policybased"
 	"k8s.io/kubernetes/pkg/registry/rolebinding"
-	rolebindingetcd "k8s.io/kubernetes/pkg/registry/rolebinding/etcd"
+	rolebindingstg "k8s.io/kubernetes/pkg/registry/rolebinding/storage"
 	rolebindingpolicybased "k8s.io/kubernetes/pkg/registry/rolebinding/policybased"
-	secretetcd "k8s.io/kubernetes/pkg/registry/secret/etcd"
+	secretstg "k8s.io/kubernetes/pkg/registry/secret/storage"
 	"k8s.io/kubernetes/pkg/registry/service"
-	etcdallocator "k8s.io/kubernetes/pkg/registry/service/allocator/etcd"
-	serviceetcd "k8s.io/kubernetes/pkg/registry/service/etcd"
+	stgallocator "k8s.io/kubernetes/pkg/registry/service/allocator/storage"
+	servicestg "k8s.io/kubernetes/pkg/registry/service/storage"
 	ipallocator "k8s.io/kubernetes/pkg/registry/service/ipallocator"
-	serviceaccountetcd "k8s.io/kubernetes/pkg/registry/serviceaccount/etcd"
-	thirdpartyresourceetcd "k8s.io/kubernetes/pkg/registry/thirdpartyresource/etcd"
+	serviceaccountstg "k8s.io/kubernetes/pkg/registry/serviceaccount/storage"
+	thirdpartyresourcestg "k8s.io/kubernetes/pkg/registry/thirdpartyresource/storage"
 	"k8s.io/kubernetes/pkg/registry/thirdpartyresourcedata"
-	thirdpartyresourcedataetcd "k8s.io/kubernetes/pkg/registry/thirdpartyresourcedata/etcd"
+	thirdpartyresourcedatastg "k8s.io/kubernetes/pkg/registry/thirdpartyresourcedata/storage"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/storage"
 	etcdmetrics "k8s.io/kubernetes/pkg/storage/etcd/metrics"
 	etcdutil "k8s.io/kubernetes/pkg/storage/etcd/util"
 	"k8s.io/kubernetes/pkg/util/wait"
 
-	daemonetcd "k8s.io/kubernetes/pkg/registry/daemonset/etcd"
-	horizontalpodautoscaleretcd "k8s.io/kubernetes/pkg/registry/horizontalpodautoscaler/etcd"
+	daemonstg "k8s.io/kubernetes/pkg/registry/daemonset/storage"
+	horizontalpodautoscalerstg "k8s.io/kubernetes/pkg/registry/horizontalpodautoscaler/storage"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
@@ -163,7 +163,7 @@ type Master struct {
 // thirdPartyEntry combines objects storage and API group into one struct
 // for easy lookup.
 type thirdPartyEntry struct {
-	storage *thirdpartyresourcedataetcd.REST
+	storage *thirdpartyresourcedatastg.REST
 	group   unversioned.APIGroup
 }
 
@@ -470,34 +470,34 @@ func (m *Master) initV1ResourcesStorage(c *Config) {
 		return m.GetRESTOptionsOrDie(c, api.Resource(resource))
 	}
 
-	podTemplateStorage := podtemplateetcd.NewREST(restOptions("podTemplates"))
+	podTemplateStorage := podtemplatestg.NewREST(restOptions("podTemplates"))
 
-	eventStorage := eventetcd.NewREST(restOptions("events"), uint64(c.EventTTL.Seconds()))
-	limitRangeStorage := limitrangeetcd.NewREST(restOptions("limitRanges"))
+	eventStorage := eventstg.NewREST(restOptions("events"), uint64(c.EventTTL.Seconds()))
+	limitRangeStorage := limitrangestg.NewREST(restOptions("limitRanges"))
 
-	resourceQuotaStorage, resourceQuotaStatusStorage := resourcequotaetcd.NewREST(restOptions("resourceQuotas"))
-	secretStorage := secretetcd.NewREST(restOptions("secrets"))
-	serviceAccountStorage := serviceaccountetcd.NewREST(restOptions("serviceAccounts"))
-	persistentVolumeStorage, persistentVolumeStatusStorage := pvetcd.NewREST(restOptions("persistentVolumes"))
-	persistentVolumeClaimStorage, persistentVolumeClaimStatusStorage := pvcetcd.NewREST(restOptions("persistentVolumeClaims"))
-	configMapStorage := configmapetcd.NewREST(restOptions("configMaps"))
+	resourceQuotaStorage, resourceQuotaStatusStorage := resourcequotastg.NewREST(restOptions("resourceQuotas"))
+	secretStorage := secretstg.NewREST(restOptions("secrets"))
+	serviceAccountStorage := serviceaccountstg.NewREST(restOptions("serviceAccounts"))
+	persistentVolumeStorage, persistentVolumeStatusStorage := pvstg.NewREST(restOptions("persistentVolumes"))
+	persistentVolumeClaimStorage, persistentVolumeClaimStatusStorage := pvcstg.NewREST(restOptions("persistentVolumeClaims"))
+	configMapStorage := configmapstg.NewREST(restOptions("configMaps"))
 
-	namespaceStorage, namespaceStatusStorage, namespaceFinalizeStorage := namespaceetcd.NewREST(restOptions("namespaces"))
+	namespaceStorage, namespaceStatusStorage, namespaceFinalizeStorage := namespacestg.NewREST(restOptions("namespaces"))
 	m.namespaceRegistry = namespace.NewRegistry(namespaceStorage)
 
-	endpointsStorage := endpointsetcd.NewREST(restOptions("endpoints"))
+	endpointsStorage := endpointstg.NewREST(restOptions("endpoints"))
 	m.endpointRegistry = endpoint.NewRegistry(endpointsStorage)
 
-	nodeStorage := nodeetcd.NewStorage(restOptions("nodes"), c.KubeletClient, m.ProxyTransport)
+	nodeStorage := nodestg.NewStorage(restOptions("nodes"), c.KubeletClient, m.ProxyTransport)
 	m.nodeRegistry = node.NewRegistry(nodeStorage.Node)
 
-	podStorage := podetcd.NewStorage(
+	podStorage := podstg.NewStorage(
 		restOptions("pods"),
 		kubeletclient.ConnectionInfoGetter(nodeStorage.Node),
 		m.ProxyTransport,
 	)
 
-	serviceRESTStorage, serviceStatusStorage := serviceetcd.NewREST(restOptions("services"))
+	serviceRESTStorage, serviceStatusStorage := servicestg.NewREST(restOptions("services"))
 	m.serviceRegistry = service.NewRegistry(serviceRESTStorage)
 
 	var serviceClusterIPRegistry service.RangeRegistry
@@ -514,24 +514,24 @@ func (m *Master) initV1ResourcesStorage(c *Config) {
 
 	serviceClusterIPAllocator := ipallocator.NewAllocatorCIDRRange(serviceClusterIPRange, func(max int, rangeSpec string) allocator.Interface {
 		mem := allocator.NewAllocationMap(max, rangeSpec)
-		// TODO etcdallocator package to return a storage interface via the storageFactory
-		etcd := etcdallocator.NewEtcd(mem, "/ranges/serviceips", api.Resource("serviceipallocations"), serviceStorage)
-		serviceClusterIPRegistry = etcd
-		return etcd
+		// TODO stgallocator package to return a storage interface via the storageFactory
+		storage := stgallocator.NewStorage(mem, "/ranges/serviceips", api.Resource("serviceipallocations"), serviceStorage)
+		serviceClusterIPRegistry = storage
+		return storage
 	})
 	m.serviceClusterIPAllocator = serviceClusterIPRegistry
 
 	var serviceNodePortRegistry service.RangeRegistry
 	serviceNodePortAllocator := portallocator.NewPortAllocatorCustom(m.ServiceNodePortRange, func(max int, rangeSpec string) allocator.Interface {
 		mem := allocator.NewAllocationMap(max, rangeSpec)
-		// TODO etcdallocator package to return a storage interface via the storageFactory
-		etcd := etcdallocator.NewEtcd(mem, "/ranges/servicenodeports", api.Resource("servicenodeportallocations"), serviceStorage)
-		serviceNodePortRegistry = etcd
-		return etcd
+		// TODO stgallocator package to return a storage interface via the storageFactory
+		storage := stgallocator.NewStorage(mem, "/ranges/servicenodeports", api.Resource("servicenodeportallocations"), serviceStorage)
+		serviceNodePortRegistry = storage
+		return storage
 	})
 	m.serviceNodePortAllocator = serviceNodePortRegistry
 
-	controllerStorage := controlleretcd.NewStorage(restOptions("replicationControllers"))
+	controllerStorage := controllerstg.NewStorage(restOptions("replicationControllers"))
 
 	serviceRest := service.NewStorage(m.serviceRegistry, m.endpointRegistry, serviceClusterIPAllocator, serviceNodePortAllocator, m.ProxyTransport)
 
@@ -700,7 +700,7 @@ func (m *Master) RemoveThirdPartyResource(path string) error {
 	return nil
 }
 
-func (m *Master) removeAllThirdPartyResources(registry *thirdpartyresourcedataetcd.REST) error {
+func (m *Master) removeAllThirdPartyResources(registry *thirdpartyresourcedatastg.REST) error {
 	ctx := api.NewDefaultContext()
 	existingData, err := registry.List(ctx, nil)
 	if err != nil {
@@ -730,7 +730,7 @@ func (m *Master) ListThirdPartyResources() []string {
 	return result
 }
 
-func (m *Master) addThirdPartyResourceStorage(path string, storage *thirdpartyresourcedataetcd.REST, apiGroup unversioned.APIGroup) {
+func (m *Master) addThirdPartyResourceStorage(path string, storage *thirdpartyresourcedatastg.REST, apiGroup unversioned.APIGroup) {
 	m.thirdPartyResourcesLock.Lock()
 	defer m.thirdPartyResourcesLock.Unlock()
 	m.thirdPartyResources[path] = thirdPartyEntry{storage, apiGroup}
@@ -771,13 +771,13 @@ func (m *Master) InstallThirdPartyResource(rsrc *extensions.ThirdPartyResource) 
 	}
 	apiserver.AddGroupWebService(api.Codecs, m.HandlerContainer, path, apiGroup)
 
-	m.addThirdPartyResourceStorage(path, thirdparty.Storage[plural.Resource].(*thirdpartyresourcedataetcd.REST), apiGroup)
+	m.addThirdPartyResourceStorage(path, thirdparty.Storage[plural.Resource].(*thirdpartyresourcedatastg.REST), apiGroup)
 	apiserver.InstallServiceErrorHandler(api.Codecs, m.HandlerContainer, m.NewRequestInfoResolver(), []string{thirdparty.GroupVersion.String()})
 	return nil
 }
 
 func (m *Master) thirdpartyapi(group, kind, version, pluralResource string) *apiserver.APIGroupVersion {
-	resourceStorage := thirdpartyresourcedataetcd.NewREST(
+	resourceStorage := thirdpartyresourcedatastg.NewREST(
 		generic.RESTOptions{
 			Storage:                 m.thirdPartyStorage,
 			Decorator:               generic.UndecoratedStorage,
@@ -846,15 +846,15 @@ func (m *Master) getExtensionResources(c *Config) map[string]rest.Storage {
 	storage := map[string]rest.Storage{}
 
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("horizontalpodautoscalers")) {
-		hpaStorage, hpaStatusStorage := horizontalpodautoscaleretcd.NewREST(restOptions("horizontalpodautoscalers"))
+		hpaStorage, hpaStatusStorage := horizontalpodautoscalerstg.NewREST(restOptions("horizontalpodautoscalers"))
 		storage["horizontalpodautoscalers"] = hpaStorage
 		storage["horizontalpodautoscalers/status"] = hpaStatusStorage
 
-		controllerStorage := expcontrolleretcd.NewStorage(m.GetRESTOptionsOrDie(c, api.Resource("replicationControllers")))
+		controllerStorage := expcontrollerstg.NewStorage(m.GetRESTOptionsOrDie(c, api.Resource("replicationControllers")))
 		storage["replicationcontrollers"] = controllerStorage.ReplicationController
 		storage["replicationcontrollers/scale"] = controllerStorage.Scale
 	}
-	thirdPartyResourceStorage := thirdpartyresourceetcd.NewREST(restOptions("thirdpartyresources"))
+	thirdPartyResourceStorage := thirdpartyresourcestg.NewREST(restOptions("thirdpartyresources"))
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("thirdpartyresources")) {
 		thirdPartyControl := ThirdPartyController{
 			master: m,
@@ -870,12 +870,12 @@ func (m *Master) getExtensionResources(c *Config) map[string]rest.Storage {
 		storage["thirdpartyresources"] = thirdPartyResourceStorage
 	}
 
-	daemonSetStorage, daemonSetStatusStorage := daemonetcd.NewREST(restOptions("daemonsets"))
+	daemonSetStorage, daemonSetStatusStorage := daemonstg.NewREST(restOptions("daemonsets"))
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("daemonsets")) {
 		storage["daemonsets"] = daemonSetStorage
 		storage["daemonsets/status"] = daemonSetStatusStorage
 	}
-	deploymentStorage := deploymentetcd.NewStorage(restOptions("deployments"))
+	deploymentStorage := deploymentstg.NewStorage(restOptions("deployments"))
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("deployments")) {
 		storage["deployments"] = deploymentStorage.Deployment
 		storage["deployments/status"] = deploymentStorage.Status
@@ -883,26 +883,26 @@ func (m *Master) getExtensionResources(c *Config) map[string]rest.Storage {
 		storage["deployments/scale"] = deploymentStorage.Scale
 	}
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("jobs")) {
-		jobsStorage, jobsStatusStorage := jobetcd.NewREST(restOptions("jobs"))
+		jobsStorage, jobsStatusStorage := jobstg.NewREST(restOptions("jobs"))
 		storage["jobs"] = jobsStorage
 		storage["jobs/status"] = jobsStatusStorage
 	}
-	ingressStorage, ingressStatusStorage := ingressetcd.NewREST(restOptions("ingresses"))
+	ingressStorage, ingressStatusStorage := ingressstg.NewREST(restOptions("ingresses"))
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("ingresses")) {
 		storage["ingresses"] = ingressStorage
 		storage["ingresses/status"] = ingressStatusStorage
 	}
-	podSecurityPolicyStorage := pspetcd.NewREST(restOptions("podsecuritypolicy"))
+	podSecurityPolicyStorage := pspstg.NewREST(restOptions("podsecuritypolicy"))
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("podsecuritypolicy")) {
 		storage["podSecurityPolicies"] = podSecurityPolicyStorage
 	}
-	replicaSetStorage := replicasetetcd.NewStorage(restOptions("replicasets"))
+	replicaSetStorage := replicasetstg.NewStorage(restOptions("replicasets"))
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("replicasets")) {
 		storage["replicasets"] = replicaSetStorage.ReplicaSet
 		storage["replicasets/status"] = replicaSetStorage.Status
 		storage["replicasets/scale"] = replicaSetStorage.Scale
 	}
-	networkPolicyStorage := networkpolicyetcd.NewREST(restOptions("networkpolicies"))
+	networkPolicyStorage := networkpolicystg.NewREST(restOptions("networkpolicies"))
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("networkpolicies")) {
 		storage["networkpolicies"] = networkPolicyStorage
 	}
@@ -917,7 +917,7 @@ func (m *Master) getAutoscalingResources(c *Config) map[string]rest.Storage {
 
 	storage := map[string]rest.Storage{}
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("horizontalpodautoscalers")) {
-		hpaStorage, hpaStatusStorage := horizontalpodautoscaleretcd.NewREST(m.GetRESTOptionsOrDie(c, autoscaling.Resource("horizontalpodautoscalers")))
+		hpaStorage, hpaStatusStorage := horizontalpodautoscalerstg.NewREST(m.GetRESTOptionsOrDie(c, autoscaling.Resource("horizontalpodautoscalers")))
 		storage["horizontalpodautoscalers"] = hpaStorage
 		storage["horizontalpodautoscalers/status"] = hpaStatusStorage
 	}
@@ -928,7 +928,7 @@ func (m *Master) getAutoscalingResources(c *Config) map[string]rest.Storage {
 func (m *Master) getBatchResources(c *Config, version unversioned.GroupVersion) map[string]rest.Storage {
 	storage := map[string]rest.Storage{}
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("jobs")) {
-		jobsStorage, jobsStatusStorage := jobetcd.NewREST(m.GetRESTOptionsOrDie(c, batch.Resource("jobs")))
+		jobsStorage, jobsStatusStorage := jobstg.NewREST(m.GetRESTOptionsOrDie(c, batch.Resource("jobs")))
 		storage["jobs"] = jobsStorage
 		storage["jobs/status"] = jobsStatusStorage
 	}
@@ -942,7 +942,7 @@ func (m *Master) getPolicyResources(c *Config) map[string]rest.Storage {
 
 	storage := map[string]rest.Storage{}
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("poddisruptionbudgets")) {
-		poddisruptionbudgetStorage, poddisruptionbudgetStatusStorage := poddisruptionbudgetetcd.NewREST(m.GetRESTOptionsOrDie(c, policy.Resource("poddisruptionbudgets")))
+		poddisruptionbudgetStorage, poddisruptionbudgetStatusStorage := poddisruptionbudgetstg.NewREST(m.GetRESTOptionsOrDie(c, policy.Resource("poddisruptionbudgets")))
 		storage["poddisruptionbudgets"] = poddisruptionbudgetStorage
 		storage["poddisruptionbudgets/status"] = poddisruptionbudgetStatusStorage
 	}
@@ -956,7 +956,7 @@ func (m *Master) getAppsResources(c *Config) map[string]rest.Storage {
 
 	storage := map[string]rest.Storage{}
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("petsets")) {
-		petsetStorage, petsetStatusStorage := petsetetcd.NewREST(m.GetRESTOptionsOrDie(c, apps.Resource("petsets")))
+		petsetStorage, petsetStatusStorage := petsetstg.NewREST(m.GetRESTOptionsOrDie(c, apps.Resource("petsets")))
 		storage["petsets"] = petsetStorage
 		storage["petsets/status"] = petsetStatusStorage
 	}
@@ -971,10 +971,10 @@ func (m *Master) getRBACResources(c *Config) map[string]rest.Storage {
 	newRuleValidator := func() rbacvalidation.AuthorizationRuleResolver {
 		once.Do(func() {
 			authorizationRuleResolver = rbacvalidation.NewDefaultRuleResolver(
-				role.NewRegistry(roleetcd.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("roles")))),
-				rolebinding.NewRegistry(rolebindingetcd.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("rolebindings")))),
-				clusterrole.NewRegistry(clusterroleetcd.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("clusterroles")))),
-				clusterrolebinding.NewRegistry(clusterrolebindingetcd.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("clusterrolebindings")))),
+				role.NewRegistry(rolestg.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("roles")))),
+				rolebinding.NewRegistry(rolebindingstg.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("rolebindings")))),
+				clusterrole.NewRegistry(clusterrolestg.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("clusterroles")))),
+				clusterrolebinding.NewRegistry(clusterrolebindingstg.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("clusterrolebindings")))),
 			)
 		})
 		return authorizationRuleResolver
@@ -982,19 +982,19 @@ func (m *Master) getRBACResources(c *Config) map[string]rest.Storage {
 
 	storage := map[string]rest.Storage{}
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("roles")) {
-		rolesStorage := roleetcd.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("roles")))
+		rolesStorage := rolestg.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("roles")))
 		storage["roles"] = rolepolicybased.NewStorage(rolesStorage, newRuleValidator(), c.AuthorizerRBACSuperUser)
 	}
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("rolebindings")) {
-		roleBindingsStorage := rolebindingetcd.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("rolebindings")))
+		roleBindingsStorage := rolebindingstg.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("rolebindings")))
 		storage["rolebindings"] = rolebindingpolicybased.NewStorage(roleBindingsStorage, newRuleValidator(), c.AuthorizerRBACSuperUser)
 	}
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("clusterroles")) {
-		clusterRolesStorage := clusterroleetcd.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("clusterroles")))
+		clusterRolesStorage := clusterrolestg.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("clusterroles")))
 		storage["clusterroles"] = clusterrolepolicybased.NewStorage(clusterRolesStorage, newRuleValidator(), c.AuthorizerRBACSuperUser)
 	}
 	if c.APIResourceConfigSource.ResourceEnabled(version.WithResource("clusterrolebindings")) {
-		clusterRoleBindingsStorage := clusterrolebindingetcd.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("clusterrolebindings")))
+		clusterRoleBindingsStorage := clusterrolebindingstg.NewREST(m.GetRESTOptionsOrDie(c, rbac.Resource("clusterrolebindings")))
 		storage["clusterrolebindings"] = clusterrolebindingpolicybased.NewStorage(clusterRoleBindingsStorage, newRuleValidator(), c.AuthorizerRBACSuperUser)
 	}
 	return storage

@@ -46,14 +46,14 @@ import (
 	"k8s.io/kubernetes/pkg/client/transport"
 	"k8s.io/kubernetes/pkg/master"
 	"k8s.io/kubernetes/pkg/registry/clusterrole"
-	clusterroleetcd "k8s.io/kubernetes/pkg/registry/clusterrole/etcd"
+	clusterrolestg "k8s.io/kubernetes/pkg/registry/clusterrole/storage"
 	"k8s.io/kubernetes/pkg/registry/clusterrolebinding"
-	clusterrolebindingetcd "k8s.io/kubernetes/pkg/registry/clusterrolebinding/etcd"
+	clusterrolebindingstg "k8s.io/kubernetes/pkg/registry/clusterrolebinding/storage"
 	"k8s.io/kubernetes/pkg/registry/generic"
 	"k8s.io/kubernetes/pkg/registry/role"
-	roleetcd "k8s.io/kubernetes/pkg/registry/role/etcd"
+	rolestg "k8s.io/kubernetes/pkg/registry/role/storage"
 	"k8s.io/kubernetes/pkg/registry/rolebinding"
-	rolebindingetcd "k8s.io/kubernetes/pkg/registry/rolebinding/etcd"
+	rolebindingstg "k8s.io/kubernetes/pkg/registry/rolebinding/storage"
 	"k8s.io/kubernetes/plugin/pkg/auth/authorizer/rbac"
 	"k8s.io/kubernetes/test/integration/framework"
 )
@@ -86,10 +86,10 @@ func newRBACAuthorizer(t *testing.T, superUser string, config *master.Config) au
 		return generic.RESTOptions{Storage: storageInterface, Decorator: generic.UndecoratedStorage}
 	}
 
-	roleRegistry := role.NewRegistry(roleetcd.NewREST(newRESTOptions("roles")))
-	roleBindingRegistry := rolebinding.NewRegistry(rolebindingetcd.NewREST(newRESTOptions("rolebindings")))
-	clusterRoleRegistry := clusterrole.NewRegistry(clusterroleetcd.NewREST(newRESTOptions("clusterroles")))
-	clusterRoleBindingRegistry := clusterrolebinding.NewRegistry(clusterrolebindingetcd.NewREST(newRESTOptions("clusterrolebindings")))
+	roleRegistry := role.NewRegistry(rolestg.NewREST(newRESTOptions("roles")))
+	roleBindingRegistry := rolebinding.NewRegistry(rolebindingstg.NewREST(newRESTOptions("rolebindings")))
+	clusterRoleRegistry := clusterrole.NewRegistry(clusterrolestg.NewREST(newRESTOptions("clusterroles")))
+	clusterRoleBindingRegistry := clusterrolebinding.NewRegistry(clusterrolebindingstg.NewREST(newRESTOptions("clusterrolebindings")))
 	return rbac.New(roleRegistry, roleBindingRegistry, clusterRoleRegistry, clusterRoleBindingRegistry, superUser)
 }
 

@@ -22,7 +22,7 @@ import (
 
 	"k8s.io/kubernetes/pkg/api"
 	expapi "k8s.io/kubernetes/pkg/apis/extensions"
-	thirdpartyresourceetcd "k8s.io/kubernetes/pkg/registry/thirdpartyresource/etcd"
+	thirdpartyresourcestg "k8s.io/kubernetes/pkg/registry/thirdpartyresource/storage"
 	"k8s.io/kubernetes/pkg/registry/thirdpartyresourcedata"
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/util/sets"
@@ -58,7 +58,7 @@ type resourceInterface interface {
 // RESTful resources which are present in the API server.
 type ThirdPartyController struct {
 	master                     resourceInterface
-	thirdPartyResourceRegistry *thirdpartyresourceetcd.REST
+	thirdPartyResourceRegistry *thirdpartyresourcestg.REST
 }
 
 // Synchronize a single resource with RESTful resources on the master
