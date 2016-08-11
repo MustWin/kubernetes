@@ -158,7 +158,7 @@ func (h *consulHelper) Create(ctx context.Context, key string, obj, out runtime.
 		}
 
 		//check against len == 0, if yes what to do?
-		err = h.extractObj(pair, err, out, false, key)
+		err = h.extractObj(storedPair, err, out, false, key)
 	}
 	return toStorageErr(err, storedPair.Key, 0)
 }
@@ -482,9 +482,18 @@ func (h *consulHelper) listInternal(fnName string, key string, filter storage.Fi
 	// so in order to version the resulting list consistantly, we apply the index
 	// of the most recent member
 	maxIndex := uint64(0)
+	for _, item := range kvPairs {
+		if item.ModifyIndex > maxIndex {
+			maxIndex = item.ModifyIndex
+		}
+	}
 
 	err = h.decodeKVPairList(kvPairs, filter, listPtr)
 	if err != nil {
+		return 0, err
+	}
+
+	if err := h.versioner.UpdateList(listObj, maxIndex); err != nil {
 		return 0, err
 	}
 
