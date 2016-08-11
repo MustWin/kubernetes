@@ -30,14 +30,14 @@ import (
 	"syscall"
 	"testing"
 	"time"
-	
+
 	"k8s.io/kubernetes/pkg/runtime"
 	"k8s.io/kubernetes/pkg/storage"
 	consulstg "k8s.io/kubernetes/pkg/storage/consul"
 	etcdtesting "k8s.io/kubernetes/pkg/storage/etcd/testing"
 	"k8s.io/kubernetes/pkg/storage/storagebackend"
 	utilnet "k8s.io/kubernetes/pkg/util/net"
-	
+
 	"github.com/golang/glog"
 	consulapi "github.com/hashicorp/consul/api"
 )
@@ -48,7 +48,7 @@ type ConsulSharedTestServer struct {
 	cmdLeave        *exec.Cmd
 	config          storagebackend.Config
 	client          *consulapi.Client
-	clientConfig	*consulapi.Config
+	clientConfig    *consulapi.Config
 	CertificatesDir string
 	ConfigFile      string
 	Prefix          string
@@ -325,7 +325,7 @@ func connectSharedConsulServer(t *testing.T, filePath string) (*ConsulSharedTest
 }
 
 func NewTestClientServer(t *testing.T, filePath string) (*ConsulSharedTestServer, error) {
-	server, index, err := connectSharedConsulServer(t, filePath)
+	server, _, err := connectSharedConsulServer(t, filePath)
 	if err != nil {
 		t.Errorf("Unexpected failure starting consul server %#v", err)
 		//return nil, err
@@ -339,7 +339,7 @@ func NewTestClientServer(t *testing.T, filePath string) (*ConsulSharedTestServer
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	server.Prefix = fmt.Sprintf("/registry/test%d", index)
+	server.Prefix = fmt.Sprintf("/registry")
 
 	return server, err
 }
@@ -395,9 +395,9 @@ func refModify(client *consulapi.Client, key string, countDelta int, createIfNot
 			}
 		}
 		kvNew := &consulapi.KVPair{
-			Key:            key,
-			Value:          []byte(strconv.Itoa(refCount)),
-			ModifyIndex:    version,
+			Key:         key,
+			Value:       []byte(strconv.Itoa(refCount)),
+			ModifyIndex: version,
 		}
 		success, _, err := KV.CAS(kvNew, nil)
 		if success {
@@ -426,7 +426,6 @@ func (s *ConsulSharedTestServer) waitUntilUp(t *testing.T) error {
 	}
 	return fmt.Errorf("timeout on waiting for consul cluster")
 }
-
 
 func (s *ConsulSharedTestServer) Terminate(t *testing.T) {
 	count, _, status := refModify(s.client, SHARED_CONSUL_REFCOUNT_KEY, -1, false)
