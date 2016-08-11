@@ -121,6 +121,15 @@ func (h *consulHelper) Create(ctx context.Context, key string, obj, out runtime.
 	}
 	trace.Step("Version checked")
 
+	//check if key already exists
+	storedPair, _, err := h.consulKv.Get(key, nil)
+	if err != nil {
+		return toStorageErr(err, key, 0)
+	}
+	if storedPair != nil {
+		return toStorageErr(NewExistsError(fmt.Sprintf("Key: %s already exists", key)), key, 0)
+	}
+
 	startTime := time.Now()
 	pair := &consulapi.KVPair{
 		//Verb:  consulapi.KVCAS,
@@ -135,7 +144,7 @@ func (h *consulHelper) Create(ctx context.Context, key string, obj, out runtime.
 		return toStorageErr(err, key, 0)
 	}
 
-	storedPair, _, err := h.consulKv.Get(key, nil)
+	storedPair, _, err = h.consulKv.Get(key, nil)
 	if err != nil {
 		return toStorageErr(err, key, 0)
 	}
@@ -529,6 +538,8 @@ func toStorageErr(err error, key string, rv int64) error {
 		storeErr := storage.NewUnreachableError(key, rv)
 		storeErr.AdditionalErrorMsg = "Consul agent not responding"
 		return storeErr
+	case isExists(err):
+		return storage.NewKeyExistsError(key, rv)
 	default:
 		return err
 	}

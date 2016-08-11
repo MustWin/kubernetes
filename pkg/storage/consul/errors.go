@@ -50,6 +50,15 @@ func isInvalidObjectError(err error) bool {
 	return false
 }
 
+func isExists(err error) bool {
+	if err != nil {
+		if consulError, ok := err.(ConsulError); ok {
+			return consulError.Code == ErrCodeKeyExists
+		}
+	}
+	return false
+}
+
 func NewInvalidObjectError(msg string) ConsulError {
 	return ConsulError{
 		Code:    ErrCodeInvalidObj,
@@ -60,6 +69,13 @@ func NewInvalidObjectError(msg string) ConsulError {
 func NewNotFoundError() ConsulError {
 	return ConsulError{
 		Code: storage.ErrCodeKeyNotFound,
+	}
+}
+
+func NewExistsError(msg string) ConsulError {
+	return ConsulError{
+		Code:    storage.ErrCodeKeyExists,
+		Message: msg,
 	}
 }
 
