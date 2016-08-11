@@ -279,7 +279,7 @@ func (h *consulHelper) Watch(ctx context.Context, key string, resourceVersion st
 		return nil, toStorageErr(err, key, 0)
 	}
 
-	return h.newConsulWatch(key, watchRV, false, h.versioner, h.Config.Address)
+	return h.newConsulWatch(key, watchRV, false, h.versioner, h.Config.Address, filter)
 }
 
 func (h *consulHelper) WatchList(ctx context.Context, key string, resourceVersion string, filter storage.FilterFunc) (watch.Interface, error) {
@@ -295,7 +295,7 @@ func (h *consulHelper) WatchList(ctx context.Context, key string, resourceVersio
 		return nil, err
 	}
 
-	return h.newConsulWatch(key, watchRV, true, h.versioner, h.Config.Address)
+	return h.newConsulWatch(key, watchRV, true, h.versioner, h.Config.Address, filter)
 }
 
 func (h *consulHelper) GetToList(ctx context.Context, key string, filter storage.FilterFunc, listObj runtime.Object) error {
@@ -492,7 +492,7 @@ func (h *consulHelper) listInternal(fnName string, key string, filter storage.Fi
 }
 
 func (h *consulHelper) decodeKVPairList(kvPairs []*consulapi.KVPair, filter storage.FilterFunc, slicePtr interface{}) error {
-	trace := util.NewTrace("decodeNodeList " + getTypeName(slicePtr))
+	trace := util.NewTrace("decodeKVPairList " + getTypeName(slicePtr))
 	defer trace.LogIfLong(400 * time.Millisecond)
 	v, err := conversion.EnforcePtr(slicePtr)
 	if err != nil || v.Kind() != reflect.Slice {
@@ -500,11 +500,8 @@ func (h *consulHelper) decodeKVPairList(kvPairs []*consulapi.KVPair, filter stor
 		panic("need ptr to slice")
 	}
 
-	trace.Step("Decoding KVPairs")
 	for _, kv := range kvPairs {
-		trace.Step("Decoding key " + kv.Key + " START")
 		obj, _, err := h.codec.Decode(kv.Value, nil, reflect.New(v.Type().Elem()).Interface().(runtime.Object))
-		trace.Step("Decoding key " + kv.Key + " END")
 		if err != nil {
 			return err
 		}
@@ -515,8 +512,7 @@ func (h *consulHelper) decodeKVPairList(kvPairs []*consulapi.KVPair, filter stor
 			v.Set(reflect.Append(v, reflect.ValueOf(obj).Elem()))
 		}
 	}
-	trace.Step("Decoded KVPairs")
-
+	trace.Step(fmt.Sprintf("Decoded %d KVPairs", len(kvPairs)))
 	return nil
 }
 

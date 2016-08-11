@@ -10,7 +10,6 @@ import (
 	utilruntime "k8s.io/kubernetes/pkg/util/runtime"
 	"k8s.io/kubernetes/pkg/watch"
 
-	"github.com/golang/glog"
 	consulapi "github.com/hashicorp/consul/api"
 	consulwatch "github.com/hashicorp/consul/watch"
 )
@@ -30,6 +29,7 @@ type consulWatch struct {
 	versioner  storage.Versioner
 	prevKV     *consulapi.KVPair
 	prevKVs    consulapi.KVPairs
+	filter     storage.FilterFunc
 }
 
 func (w *consulWatch) emit(ev watch.Event) bool {
@@ -46,7 +46,7 @@ func nullEmitter(w watch.Event) bool {
 	return false
 }
 
-func (s *consulHelper) newConsulWatch(key string, version uint64, deep bool, versioner storage.Versioner, address string) (*consulWatch, error) {
+func (s *consulHelper) newConsulWatch(key string, version uint64, deep bool, versioner storage.Versioner, address string, filter storage.FilterFunc) (*consulWatch, error) {
 	w := &consulWatch{
 		address:    address,
 		stopChan:   make(chan bool, 1),
@@ -54,6 +54,7 @@ func (s *consulHelper) newConsulWatch(key string, version uint64, deep bool, ver
 		storage:    s,
 		stopped:    false,
 		versioner:  versioner,
+		filter:     filter,
 	}
 
 	kv, _, err := s.consulKv.Get(key, nil)
@@ -203,6 +204,9 @@ func containsAndEqual(s consulapi.KVPairs, e *consulapi.KVPair) (bool, bool) {
 }
 
 func (w *consulWatch) sendAdded(obj runtime.Object) {
+	if !w.filter(obj) {
+		return
+	}
 	w.emit(watch.Event{
 		Type:   watch.Added,
 		Object: obj,
@@ -210,6 +214,9 @@ func (w *consulWatch) sendAdded(obj runtime.Object) {
 }
 
 func (w *consulWatch) sendModified(obj runtime.Object) {
+	if !w.filter(obj) {
+		return
+	}
 	w.emit(watch.Event{
 		Type:   watch.Modified,
 		Object: obj,
@@ -217,6 +224,9 @@ func (w *consulWatch) sendModified(obj runtime.Object) {
 }
 
 func (w *consulWatch) sendDeleted(obj runtime.Object) {
+	if !w.filter(obj) {
+		return
+	}
 	w.emit(watch.Event{
 		Type:   watch.Deleted,
 		Object: obj,
@@ -224,6 +234,9 @@ func (w *consulWatch) sendDeleted(obj runtime.Object) {
 }
 
 func (w *consulWatch) sendError(obj runtime.Object) {
+	if !w.filter(obj) {
+		return
+	}
 	w.emit(watch.Event{
 		Type:   watch.Error,
 		Object: obj,
@@ -248,9 +261,8 @@ func (w *consulWatch) handleWatchEvent(kv *consulapi.KVPair) {
 			return
 		}
 	} else {
-		//this is unexpected
-		//we should not get a nil kv when w.prevKV is nil as well. This indicates that we deleted a non existing key
-		glog.Errorf("Unexpected watch behaviour. kv and prevKV are nil. Happens when we start watching a non existing key(prefix)")
+		//this happens when watching a non existing key
+		//noop in this case
 		return
 	}
 
